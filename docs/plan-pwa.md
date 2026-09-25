@@ -1,7 +1,12 @@
 # Plan: PWA for iPhone
 
-Status: **step 1 implemented, waiting for the iPhone test** (2026-09-25). Decisions: step 1 first; icon = white "R" on the
-accent colour `#b45309` (`ICON_SVG` in `src/static.js`). iPhone needs a PNG `apple-touch-icon` (step 3).
+Status (2026-09-25): **installable and working on the iPhone.**
+- Done: steps 1, 2, 3 and 6; from step 4 the service worker itself (push only, no `fetch` handler yet).
+- **Open: offline cache (rest of step 4), offline behaviour (step 5), their tests (7), verification (8).**
+- To check on the iPhone after the step 2 polish: status bar colour follows light/dark and the theme
+  button; header clear of the status bar/notch; version footer clear of the home indicator. If iOS keeps
+  a plain white/black bar, `apple-mobile-web-app-status-bar-style` (`default`/`black-translucent`) is the
+  next knob — `black-translucent` always has white text, so it only fits dark backgrounds.
 
 ## Goal
 Install the reader on the iPhone home screen (Safari → Share → Add to Home Screen): opens like an app
@@ -17,23 +22,25 @@ Not in scope: push notifications; full article text offline (would need HTML san
 - Mitigation: set a **long Access session duration** (e.g. 1 month) for this application.
 
 ## Steps
-1. **Deploy + Access + minimal manifest (risk check).** Real HTTPS needed (iPhone can't install from
+1. ✅ **Deploy + Access + minimal manifest (risk check).** Real HTTPS needed (iPhone can't install from
    localhost). Minimal manifest (name, `display: standalone`), install on iPhone, log in, close/reopen.
    Decision point: if login inside the app is not acceptable → stop and discuss.
-2. **Manifest + iPhone tags** (`src/static.js`, `src/views.js`, `src/index.js`):
+2. ✅ **Manifest + iPhone tags** (`src/static.js`, `src/views.js`, `src/index.js`):
    `/manifest.webmanifest`, linked with `crossorigin="use-credentials"` (else fetched without cookie →
    blocked by Access). `apple-touch-icon` 180×180, `theme-color` light/dark, `viewport-fit=cover` +
-   safe-area CSS padding.
-3. **Icons** (`scripts/make-icons.mjs` → generated `src/icons/*.png`, imported by the Worker): 180, 192, 512, 512 maskable.
-   Generated as PNG with Node's built-in `zlib` only; embedded as base64, served by the Worker.
-   Or use the user's own icon.
+   safe-area CSS padding. Done: two `theme-color` tags (light/dark media query); `rssSetTheme()` in
+   `/theme.js` sets both to the forced colour when the theme button is used.
+3. ✅ **Icons** (`scripts/make-icons.mjs` → generated `src/icons/*.png`): 180, 192, 512, 512 maskable.
+   Generated as PNG with Node's built-in `zlib` only; imported by the Worker as binary data
+   (`[[rules]]` in `wrangler.toml`) and served from `src/index.js`.
 4. **Service worker** (`/sw.js`, source in `src/static.js`):
    pages network-first (~3 s timeout) → cached copy; CSS/JS/icons/manifest cache-first with a version.
    Only cache 200, non-redirected, same-origin responses (never the Access login page). Never POSTs.
-   Serve `/sw.js` with `cache-control: no-cache`.
+   Serve `/sw.js` with `cache-control: no-cache` (done). Also cache thumbnails (`/img/<id>`), cache-first
+   with a size/count limit, so the saved list shows its images offline.
 5. **Offline behaviour in the page**: hidden "Offline – showing saved copy" banner toggled via
    `classList`; action buttons show "Not available offline" instead of the form-post fallback.
-6. **Security headers** (`src/index.js`): CSP add `manifest-src 'self'`, `worker-src 'self'`.
+6. ✅ **Security headers** (`src/index.js`): CSP add `manifest-src 'self'`, `worker-src 'self'`.
    Trusted Types: `serviceWorker.register()` needs a script-URL policy → policy allowing exactly
    `/sw.js` + CSP `trusted-types sw-url`.
 7. **Tests** (`test/pwa.test.js`): manifest fields + icon sizes, icons are valid PNGs, CSP directives,

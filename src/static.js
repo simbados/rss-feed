@@ -26,16 +26,19 @@ button:hover { border-color: var(--muted); }
 button.danger { color: var(--danger); }
 input[type=text], input[type=url], select { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
 /* The header stays visible while scrolling; the sidebar sticks just below it. */
-.top { display: flex; align-items: center; gap: 24px; padding: 10px 16px; border-bottom: 1px solid var(--line);
+/* viewport-fit=cover: the page reaches under notch and home indicator; env(safe-area-inset-*) keeps content clear (0 elsewhere). */
+.top { display: flex; align-items: center; gap: 24px; border-bottom: 1px solid var(--line);
+  padding: calc(10px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
   position: sticky; top: 0; z-index: 10; background: var(--bg); }
-html { scroll-padding-top: 56px; }
+html { scroll-padding-top: calc(56px + env(safe-area-inset-top)); }
 .brand { font-weight: 700; text-decoration: none; color: var(--accent); }
 .top nav { display: flex; gap: 16px; }
 .theme-toggle { margin-left: auto; font-size: 13px; white-space: nowrap; }
 .top nav a, .side a, .filters a { text-decoration: none; color: var(--muted); }
 .top nav a.on, .filters a.on { color: var(--fg); font-weight: 600; }
-.wrap { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; max-width: 1100px; margin: 0 auto; padding: 16px; }
-.side { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 64px; align-self: start; }
+.wrap { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; max-width: 1100px; margin: 0 auto;
+  padding: 16px max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+.side { display: flex; flex-direction: column; gap: 2px; position: sticky; top: calc(64px + env(safe-area-inset-top)); align-self: start; }
 .side a { display: flex; justify-content: space-between; padding: 4px 8px; border-radius: 6px; }
 .side a.on { background: var(--accent-bg); color: var(--fg); }
 .count { font-variant-numeric: tabular-nums; font-size: 12px; }
@@ -58,7 +61,7 @@ h1 { font-size: 20px; margin: 0; }
 .snippet { margin: 6px 0; color: var(--fg); opacity: .85; overflow-wrap: anywhere; }
 .actions { display: flex; gap: 6px; font-size: 13px; }
 .actions form, .row-actions form, form.inline { display: inline; margin: 0; }
-.version { position: fixed; left: 8px; bottom: 6px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
+.version { position: fixed; left: calc(8px + env(safe-area-inset-left)); bottom: calc(6px + env(safe-area-inset-bottom)); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
 .push { margin-bottom: 16px; }
 .push h2 { font-size: 16px; margin: 0 0 4px; }
 .push p { margin: 4px 0 8px; }
@@ -147,8 +150,7 @@ export const JS = `'use strict';
     toggle.hidden = false;
     toggle.addEventListener('click', () => {
       const next = NEXT[document.documentElement.dataset.theme || ''];
-      if (next) document.documentElement.dataset.theme = next;
-      else delete document.documentElement.dataset.theme;
+      window.rssSetTheme(next);
       try {
         if (next) localStorage.setItem('theme', next);
         else localStorage.removeItem('theme');
@@ -252,10 +254,24 @@ export const JS = `'use strict';
 `;
 
 // Loaded synchronously in <head> so a saved theme applies before the first paint.
+// rssSetTheme is also used by the theme button in /app.js.
 export const THEME_JS = `'use strict';
+// Page background colours; the browser/status bar (theme-color) uses the same ones.
+const THEME_COLORS = { light: '#fafaf9', dark: '#161412' };
+
+// '' = follow the system setting, 'light' / 'dark' = forced by the theme button.
+window.rssSetTheme = (t) => {
+  if (t) document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  // Two theme-color tags (light/dark, chosen by media query). A forced theme sets both to its colour.
+  for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
+    meta.content = THEME_COLORS[t || meta.dataset.scheme];
+  }
+};
+
 try {
   const t = localStorage.getItem('theme');
-  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  if (t === 'light' || t === 'dark') window.rssSetTheme(t);
 } catch {}
 `;
 

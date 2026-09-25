@@ -96,3 +96,36 @@ test('notification click opens only paths on this site', async () => {
     assert.deepEqual(sw.opened, [expected], String(url));
   }
 });
+
+import { CSS, THEME_JS } from '../src/static.js';
+
+test('full-screen viewport and theme-color tags matching the page background', () => {
+  const page = layout({ title: 't', active: 'home', topics: [], totalUnread: 0, version: 'v', body: '' }).toString();
+  assert.match(page, /<meta name="viewport" content="[^"]*viewport-fit=cover">/);
+  const light = CSS.match(/:root \{\s*--bg: (#[0-9a-f]{6})/)[1];
+  const dark = CSS.match(/:root\[data-theme="dark"\] \{ --bg: (#[0-9a-f]{6})/)[1];
+  assert.match(page, new RegExp(`<meta name="theme-color" content="${light}" media="\\(prefers-color-scheme: light\\)" data-scheme="light">`));
+  assert.match(page, new RegExp(`<meta name="theme-color" content="${dark}" media="\\(prefers-color-scheme: dark\\)" data-scheme="dark">`));
+  assert.ok(THEME_JS.includes(`light: '${light}'`) && THEME_JS.includes(`dark: '${dark}'`), 'theme.js uses the same colours');
+  assert.match(CSS, /env\(safe-area-inset-top\)/);
+});
+
+test('rssSetTheme: forced theme sets both theme-color tags, auto restores them', () => {
+  const metas = [
+    { content: '#fafaf9', dataset: { scheme: 'light' } },
+    { content: '#161412', dataset: { scheme: 'dark' } },
+  ];
+  const root = { dataset: {} };
+  const window = {};
+  const document = { documentElement: root, querySelectorAll: () => metas };
+  const localStorage = { getItem: () => 'dark' };
+  new Function('window', 'document', 'localStorage', THEME_JS)(window, document, localStorage);
+
+  assert.equal(root.dataset.theme, 'dark', 'saved theme applied on load');
+  assert.deepEqual(metas.map((m) => m.content), ['#161412', '#161412']);
+  window.rssSetTheme('light');
+  assert.deepEqual(metas.map((m) => m.content), ['#fafaf9', '#fafaf9']);
+  window.rssSetTheme('');
+  assert.equal(root.dataset.theme, undefined);
+  assert.deepEqual(metas.map((m) => m.content), ['#fafaf9', '#161412'], 'auto: each tag back to its own scheme');
+});

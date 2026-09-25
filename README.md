@@ -49,7 +49,7 @@ The installed app (iPhone: Safari → Share → Add to Home Screen) can get one 
 3. In the installed app: Feeds → Notifications → *Turn on*, then *Send test*.
 
 The Worker encrypts each message for the device (RFC 8291) and signs it with the private key (RFC 8292);
-Apple's push service only forwards it. See `docs/plan-push.md`.
+Apple's push service only forwards it.
 
 ## Local development
 

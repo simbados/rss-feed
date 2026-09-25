@@ -46,8 +46,10 @@ export function layout(p) {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="same-origin">
+<meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)" data-scheme="light">
+<meta name="theme-color" content="#161412" media="(prefers-color-scheme: dark)" data-scheme="dark">
 <title>${p.title} · RSS</title>
 <link rel="stylesheet" href="/app.css">
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
