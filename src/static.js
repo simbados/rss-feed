@@ -21,13 +21,16 @@ button { background: var(--card); border: 1px solid var(--line); border-radius: 
 button:hover { border-color: var(--muted); }
 button.danger { color: var(--danger); }
 input[type=text], input[type=url], select { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
-.top { display: flex; align-items: center; gap: 24px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+/* The header stays visible while scrolling; the sidebar sticks just below it. */
+.top { display: flex; align-items: center; gap: 24px; padding: 10px 16px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 10; background: var(--bg); }
+html { scroll-padding-top: 56px; }
 .brand { font-weight: 700; text-decoration: none; color: var(--accent); }
 .top nav { display: flex; gap: 16px; }
 .top nav a, .side a, .filters a { text-decoration: none; color: var(--muted); }
 .top nav a.on, .filters a.on { color: var(--fg); font-weight: 600; }
 .wrap { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; max-width: 1100px; margin: 0 auto; padding: 16px; }
-.side { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 16px; align-self: start; }
+.side { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 64px; align-self: start; }
 .side a { display: flex; justify-content: space-between; padding: 4px 8px; border-radius: 6px; }
 .side a.on { background: var(--accent-bg); color: var(--fg); }
 .count { font-variant-numeric: tabular-nums; font-size: 12px; }
