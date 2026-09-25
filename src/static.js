@@ -35,8 +35,10 @@ h1 { font-size: 20px; margin: 0; }
 .toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
 .filters { display: flex; gap: 12px; text-transform: capitalize; }
 .toolbar form { margin-left: auto; }
-.item { padding: 12px 0; border-bottom: 1px solid var(--line); display: flow-root; }
-.thumb { float: right; width: auto; height: auto; max-height: 88px; max-width: min(160px, 40%); margin: 2px 0 6px 12px; border-radius: 6px; }
+.item { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.head { display: flex; align-items: flex-start; gap: 12px; }
+.head > div { min-width: 0; }
+.thumb { flex: none; width: auto; height: auto; max-height: 88px; max-width: min(160px, 40%); border-radius: 6px; }
 .item h2 { font-size: 16px; margin: 0 0 2px; }
 .item h2 a { text-decoration: none; }
 .item h2 a:hover { text-decoration: underline; }
