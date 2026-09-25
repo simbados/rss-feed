@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Trimmed copy of lebensmittelwarnung.de's feed (2026-09-25): every <title> is an unrendered template.
+     The third item is made up and shows the feed once the source is fixed. -->
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+<atom:link href="___LMW-Redaktion/RSSNewsfeed/Functions/RssFeeds/rssnewsfeed_Alle_DE.xml?nn=314268" rel="self" type="application/rss+xml" />
+<title>Lebensmittelwarnung.de - Bayern - Alle Produkttypen</title>
+<link>https://www.lebensmittelwarnung.de/</link>
+<description>Derzeit wird vor folgenden Produkten gewarnt.</description>
+<language>de-de</language>
+<item>
+<title>$esc.escapeXml($cms.oneLineText($m.title))</title>
+<link>https://www.lebensmittelwarnung.de/___lebensmittelwarnung.de/Meldungen/2026/06_Juni/260616_11_BE_Austern/260616_11_BE_Austern_Meldung.html</link>
+<pubDate>Fri, 18 Sep 2026 09:52:00 +0200</pubDate>
+<description><![CDATA[<img src="https://www.lebensmittelwarnung.de/___lebensmittelwarnung.de/Meldungen/2026/06_Juni/260616_11_BE_Austern/260616_11_BE_Austern_Bild.jpg?__blob=normal&amp;v=1" width="100" /><br/><b>Bildquelle</b> © Go Asia Deutschland GmbH und Orient Master GmbH<br/><b>Verpackungseinheit:</b> 226 Gramm<br/><b>Chargennummer / Los-Kennzeichnung:</b> 87703 01180<br/><b>Kontakt:</b> Inverkehrbringer:
+Go Asia Deutschland GmbH,
+Kantstraße 115,
+10627 Berlin<br/><b>Grund der Meldung:</b>   Krankheitserreger<br/><b>Haltbarkeit:</b> Mindesthaltbarkeitsdatum: alle Mindesthaltbarkeitsdaten vom 08.04.2027 bis 04.05.2027<br/><b>Hersteller / Inverkehrbringer:</b> Importeur:
+Asia Express Food,
+Kilbystraat 1,
+8263 Kampen,
+Niederlande<br/><b>Produktbezeichnung/ -beschreibung:</b> Gefrorene Austern, 226 Gramm, Surasang Frozen oysters (I:Q:F:) Huitre Congelee<br/><b>Betroffene Bundesländer nach derzeitigem Stand:</b>   Bayern, Berlin, Hamburg<br/>]]></description>
+ <guid>https://www.lebensmittelwarnung.de/___lebensmittelwarnung.de/Meldungen/2026/06_Juni/260616_11_BE_Austern/260616_11_BE_Austern_Meldung.html</guid>
+</item>
+<item>
+<title>$esc.escapeXml($cms.oneLineText($m.title))</title>
+<link>https://www.lebensmittelwarnung.de/___lebensmittelwarnung.de/Meldungen/2026/09_September/260917_07_BW_Bratwurst/260917_07_BW_Bratwurst.html</link>
+<pubDate>Fri, 11 Sep 2026 21:30:00 +0200</pubDate>
+<description><![CDATA[<img src="https://www.lebensmittelwarnung.de/___lebensmittelwarnung.de/Meldungen/2026/09_September/260917_07_BW_Bratwurst/260917_07_BW_Bratwurst_Bild.png?__blob=normal&amp;v=1" width="100" /><br/><b>Bildquelle</b> © Filialaushang<br/><b>Verpackungseinheit:</b> 400 Gramm und 1600 Gramm<br/><b>Grund der Meldung:</b>   Fremdkörper<br/><b>Haltbarkeit:</b> Metzgerfrisch Frische Grobe Bratwurst 400 Gramm: Mindesthaltbarkeitsdatum 15.09.2026<br/><b>Hersteller / Inverkehrbringer:</b> Firma Lidl Stiftung & Co.KG<br/><b>Produktbezeichnung/ -beschreibung:</b> Metzgerfrisch Frische Grobe Bratwurst 400 Gramm<br/><b>Betroffene Bundesländer nach derzeitigem Stand:</b>   Bayern<br/>]]></description>
+ <guid>https://www.lebensmittelwarnung.de/___lebensmittelwarnung.de/Meldungen/2026/09_September/260917_07_BW_Bratwurst/260917_07_BW_Bratwurst.html</guid>
+</item>
+<item>
+<title>Rückruf: Beispielkäse</title>
+<link>https://www.lebensmittelwarnung.de/___lebensmittelwarnung.de/Meldungen/2026/09_September/beispiel.html</link>
+<pubDate>Wed, 23 Sep 2026 10:00:00 +0200</pubDate>
+<description><![CDATA[<b>Grund der Meldung:</b> Listerien<br/><b>Produktbezeichnung/ -beschreibung:</b> Beispielkäse 200 Gramm<br/>]]></description>
+ <guid>https://www.lebensmittelwarnung.de/___lebensmittelwarnung.de/Meldungen/2026/09_September/beispiel.html</guid>
+</item>
+</channel>
+</rss>

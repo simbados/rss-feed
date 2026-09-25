@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseFeed, discoverFeeds, decodeEntities, htmlToText, NotAFeedError } from '../src/parser.js';
+import { parseFeed, discoverFeeds, decodeEntities, htmlToText, isTemplatePlaceholder, NotAFeedError } from '../src/parser.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
@@ -106,4 +106,34 @@ test('evil feed: parser output is plain text (escaping still required on output)
   assert.equal(first.snippet, '<script>alert(4)</script> x');
   // javascript:/data: URLs survive parsing as data; views must neutralise them with safeUrl().
   assert.equal(f.items[0].url, 'javascript:alert(document.cookie)');
+});
+
+const LMW_URL =
+  'https://www.lebensmittelwarnung.de/___LMW-Redaktion/RSSNewsfeed/Functions/RssFeeds/rssnewsfeed_Alle_DE.xml?nn=314268&state=bayern';
+
+test('lebensmittelwarnung.de: titles rebuilt from the labelled description fields', () => {
+  const [a, b, c] = parseFeed(fixture('lebensmittelwarnung.xml'), LMW_URL).items;
+  assert.equal(a.title, 'Gefrorene Austern, 226 Gramm, Surasang Frozen oysters (I:Q:F:) Huitre Congelee – Krankheitserreger');
+  assert.equal(
+    a.snippet,
+    'Grund: Krankheitserreger · Haltbarkeit: Mindesthaltbarkeitsdatum: alle Mindesthaltbarkeitsdaten vom 08.04.2027 bis 04.05.2027 · Charge: 87703 01180'
+  );
+  assert.equal(b.title, 'Metzgerfrisch Frische Grobe Bratwurst 400 Gramm – Fremdkörper');
+  assert.equal(b.snippet, 'Grund: Fremdkörper · Haltbarkeit: Metzgerfrisch Frische Grobe Bratwurst 400 Gramm: Mindesthaltbarkeitsdatum 15.09.2026', 'missing fields are skipped');
+  assert.equal(c.title, 'Rückruf: Beispielkäse', 'a real title is kept once the source is fixed');
+});
+
+test('template placeholder titles fall back to the URL on other hosts', () => {
+  const [a] = parseFeed(fixture('lebensmittelwarnung.xml'), 'https://mirror.example.com/feed.xml').items;
+  assert.equal(a.title, a.url);
+  assert.match(a.snippet, /^Bildquelle/, 'no site rule applied');
+});
+
+test('isTemplatePlaceholder', () => {
+  for (const s of ['$esc.escapeXml($cms.oneLineText($m.title))', '$m.title', '${title}', '$!{item.title}', '{{ title }}']) {
+    assert.ok(isTemplatePlaceholder(s), s);
+  }
+  for (const s of ['$TSLA', '$5 off everything', 'Price in $ (USD)', 'Why {{mustache}} templates are fine']) {
+    assert.ok(!isTemplatePlaceholder(s), s);
+  }
 });

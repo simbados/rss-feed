@@ -42,8 +42,8 @@ The Worker fails closed: without a valid Access JWT every request gets `401`.
 
 ```sh
 echo 'DEV_NO_AUTH=1' > .dev.vars                     # skip Access locally only
-wrangler d1 migrations apply rss-feed --local
-wrangler dev --test-scheduled                         # then: curl localhost:8787/__scheduled
+npm run db:migrate:local                             # wrangler from node_modules
+npm run dev                                           # then: curl localhost:8787/__scheduled
 ```
 
 ## Notes

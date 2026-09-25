@@ -172,6 +172,69 @@ function findLink(doc, xml) {
 }
 
 /**
+ * True for text that is unrendered server-side template code, e.g.
+ * "$esc.escapeXml($m.title)", "${title}" or "{{ title }}". A bare "$TSLA" is not matched.
+ * @param {string} s
+ */
+export function isTemplatePlaceholder(s) {
+  return /^\$!?\{.+\}$|^\$!?[a-z_]\w*(?:\.\w+|\(.*\))+$|^\{\{.*\}\}$/i.test(s.trim());
+}
+
+/**
+ * "<b>Label:</b> value" pairs of an HTML description; labels without the trailing colon.
+ * @param {string} html
+ */
+function labelledFields(html) {
+  const fields = new Map();
+  for (const m of html.matchAll(/<b>([^<]+)<\/b>([\s\S]*?)(?=<b>|$)/gi)) {
+    fields.set(htmlToText(m[1]).replace(/:$/, ''), htmlToText(m[2]));
+  }
+  return fields;
+}
+
+/**
+ * @typedef {(item: { title: string, body: string, descriptionHtml: string }) => { title: string, body: string }} SiteRule
+ */
+
+/**
+ * lebensmittelwarnung.de ships an unrendered template as every item title (reported 2026-09-25)
+ * and starts every description with the image credit. Rebuild both from the labelled fields.
+ * @type {SiteRule}
+ */
+function lebensmittelwarnung({ title, body, descriptionHtml }) {
+  const f = labelledFields(descriptionHtml);
+  const product = f.get('Produktbezeichnung/ -beschreibung');
+  const reason = f.get('Grund der Meldung');
+  if (!title && product) title = reason ? `${product} – ${reason}` : product;
+  const summary = [
+    ['Grund', reason],
+    ['Haltbarkeit', f.get('Haltbarkeit')],
+    ['Charge', f.get('Chargennummer / Los-Kennzeichnung')],
+  ]
+    .filter(([, v]) => v)
+    .map(([label, v]) => `${label}: ${v}`)
+    .join(' · ');
+  return { title, body: summary || body };
+}
+
+/**
+ * Repairs for feeds that are broken at the source, keyed by host without "www.".
+ * @type {Record<string, SiteRule>}
+ */
+const SITE_RULES = {
+  'lebensmittelwarnung.de': lebensmittelwarnung,
+};
+
+/** @param {string} url */
+function siteRuleFor(url) {
+  try {
+    return SITE_RULES[new URL(url).hostname.replace(/^www\./, '')];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * @param {string} xml
  * @param {string} [feedUrl] used to resolve relative links
  * @returns {ParsedFeed}
@@ -198,6 +261,7 @@ export function parseFeed(xml, feedUrl = '') {
   const title = firstText(doc, head, ['title']);
   const siteUrl = resolveUrl(findLink(doc, head), feedUrl);
   const base = siteUrl || feedUrl;
+  const siteRule = siteRuleFor(feedUrl);
 
   /** @type {FeedItem[]} */
   const items = [];
@@ -211,8 +275,13 @@ export function parseFeed(xml, feedUrl = '') {
     if (!link && guidEl && /^https?:\/\//i.test(guid) && guidEl.attrs.ispermalink !== 'false') link = guid;
     const url = resolveUrl(link, base);
 
-    const itemTitle = firstText(doc, x, ['title']);
-    const body = firstText(doc, x, ['description', 'summary', 'content:encoded', 'content', 'media:description']);
+    let itemTitle = firstText(doc, x, ['title']);
+    if (isTemplatePlaceholder(itemTitle)) itemTitle = '';
+    let body = firstText(doc, x, ['description', 'summary', 'content:encoded', 'content', 'media:description']);
+    if (siteRule) {
+      const descriptionHtml = doc.text(elements(x, 'description')[0]?.inner ?? '');
+      ({ title: itemTitle, body } = siteRule({ title: itemTitle, body, descriptionHtml }));
+    }
     const authorEl = elements(x, 'author')[0];
     const author =
       (authorEl && (firstText(doc, authorEl.inner, ['name']) || htmlToText(doc.text(authorEl.inner)))) ||
