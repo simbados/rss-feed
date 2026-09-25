@@ -5,6 +5,7 @@ import { authenticate } from './auth.js';
 import * as db from './db.js';
 import { addFeed, refreshFeed, runScheduled } from './fetcher.js';
 import { SafeHtml } from './html.js';
+import { articleImage } from './images.js';
 import { CSS, JS } from './static.js';
 import * as views from './views.js';
 
@@ -224,8 +225,22 @@ async function handlePost(request, env, url) {
   return errorResponse(404, 'Not found.');
 }
 
-/** @param {Request} request @param {any} env */
-async function handle(request, env) {
+/**
+ * @param {Request} request @param {any} env @param {number} id
+ * @param {{ waitUntil(p: Promise<unknown>): void }} ctx
+ */
+async function serveImage(request, env, ctx, id) {
+  const img = await articleImage(request, env, ctx, id);
+  // Missing or broken images are cached too, so the browser does not retry them on every page.
+  if (!img) return respond(null, 404, { 'cache-control': 'private, max-age=86400' });
+  return respond(img.body, 200, { 'content-type': img.type, 'cache-control': `private, max-age=${img.maxAge}` });
+}
+
+/**
+ * @param {Request} request @param {any} env
+ * @param {{ waitUntil(p: Promise<unknown>): void }} ctx
+ */
+async function handle(request, env, ctx) {
   const url = new URL(request.url);
 
   const auth = await authenticate(request, env);
@@ -235,6 +250,8 @@ async function handle(request, env) {
   }
 
   if (request.method === 'GET' || request.method === 'HEAD') {
+    const img = url.pathname.match(/^\/img\/(\d+)$/);
+    if (img) return serveImage(request, env, ctx, Number(img[1]));
     switch (url.pathname) {
       case '/':
         return renderTimeline(env, url);
@@ -268,10 +285,10 @@ async function handle(request, env) {
 }
 
 export default {
-  /** @param {Request} request @param {any} env */
-  async fetch(request, env) {
+  /** @param {Request} request @param {any} env @param {{ waitUntil(p: Promise<unknown>): void }} ctx */
+  async fetch(request, env, ctx) {
     try {
-      return await handle(request, env);
+      return await handle(request, env, ctx);
     } catch (err) {
       console.error(err);
       return errorResponse(500, 'Something went wrong.');

@@ -80,6 +80,7 @@ export function articleItem(a) {
   const readAction = a.is_read ? 'unread' : 'read';
   const starAction = a.is_starred ? 'unstar' : 'star';
   return html`<article class="item${a.is_read ? ' is-read' : ''}${a.is_starred ? ' is-starred' : ''}" data-id="${a.id}">
+  ${a.image_url ? html`<img class="thumb" src="/img/${a.id}" alt="" loading="lazy" decoding="async" width="88" height="88">` : ''}
   <h2><a class="title" href="${safeUrl(a.url)}" target="_blank" rel="noopener noreferrer">${a.title || '(untitled)'}</a></h2>
   <div class="meta">
     <a href="${qs({ feed: a.feed_id })}">${a.feed_title}</a>

@@ -11,6 +11,7 @@
  * @property {string} snippet
  * @property {string} author
  * @property {number|null} publishedAt  epoch ms, null if unknown
+ * @property {string} imageUrl  absolute http(s) URL or ''
  *
  * @typedef {Object} ParsedFeed
  * @property {'rss'|'atom'|'rdf'} format
@@ -172,6 +173,28 @@ function findLink(doc, xml) {
 }
 
 /**
+ * Image of an item: media:thumbnail, an image media:content/enclosure, else the first <img>
+ * in the HTML body. 1×1 tracking pixels are skipped. @param {Doc} doc @param {string} xml
+ */
+function findImage(doc, xml) {
+  const thumb = elements(xml, 'media:thumbnail').find((e) => e.attrs.url);
+  if (thumb) return thumb.attrs.url;
+  const media = [...elements(xml, 'media:content'), ...elements(xml, 'enclosure')].find(
+    (e) => e.attrs.url && (e.attrs.medium === 'image' || /^image\//i.test(e.attrs.type || ''))
+  );
+  if (media) return media.attrs.url;
+  for (const tag of ['description', 'content:encoded', 'content', 'summary']) {
+    for (const el of elements(xml, tag)) {
+      for (const m of doc.text(el.inner).matchAll(/<img\b([^>]*)>/gi)) {
+        const a = parseAttrs(m[1]);
+        if (a.src && a.width !== '1' && a.height !== '1') return a.src;
+      }
+    }
+  }
+  return '';
+}
+
+/**
  * True for text that is unrendered server-side template code, e.g.
  * "$esc.escapeXml($m.title)", "${title}" or "{{ title }}". A bare "$TSLA" is not matched.
  * @param {string} s
@@ -288,6 +311,8 @@ export function parseFeed(xml, feedUrl = '') {
       firstText(doc, x, ['dc:creator']);
     const publishedAt = parseDate(firstText(doc, x, ['pubDate', 'published', 'dc:date', 'updated', 'issued']));
 
+    const imageUrl = resolveUrl(findImage(doc, x), base);
+
     if (!itemTitle && !url) continue;
     items.push({
       guid: guid || url || `${itemTitle}|${publishedAt ?? ''}`,
@@ -296,6 +321,7 @@ export function parseFeed(xml, feedUrl = '') {
       snippet: truncate(body, SNIPPET_LENGTH),
       author: truncate(author, 200),
       publishedAt,
+      imageUrl: /^https?:\/\//i.test(imageUrl) && imageUrl.length <= 2000 ? imageUrl : '',
     });
   }
 

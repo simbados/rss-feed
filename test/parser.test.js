@@ -137,3 +137,27 @@ test('isTemplatePlaceholder', () => {
     assert.ok(!isTemplatePlaceholder(s), s);
   }
 });
+
+test('lebensmittelwarnung.de: product photo from the description', () => {
+  const [a, , c] = parseFeed(fixture('lebensmittelwarnung.xml'), LMW_URL).items;
+  assert.equal(
+    a.imageUrl,
+    'https://www.lebensmittelwarnung.de/___lebensmittelwarnung.de/Meldungen/2026/06_Juni/260616_11_BE_Austern/260616_11_BE_Austern_Bild.jpg?__blob=normal&v=1'
+  );
+  assert.equal(c.imageUrl, '', 'no image in the item');
+});
+
+test('item images: media and enclosures before inline <img>, pixels and non-http skipped', () => {
+  const rss = (item) =>
+    `<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>T</title><link>https://ex.com/</link>
+     <item><title>I</title><link>https://ex.com/1</link>${item}</item></channel></rss>`;
+  const img = (item) => parseFeed(rss(item), 'https://ex.com/feed').items[0].imageUrl;
+
+  assert.equal(img('<media:thumbnail url="https://cdn.ex.com/t.jpg"/><description>&lt;img src="https://ex.com/b.jpg"&gt;</description>'), 'https://cdn.ex.com/t.jpg');
+  assert.equal(img('<media:content url="https://cdn.ex.com/v.mp4" medium="video"/><media:content url="https://cdn.ex.com/p.jpg" medium="image"/>'), 'https://cdn.ex.com/p.jpg');
+  assert.equal(img('<enclosure url="https://cdn.ex.com/a.mp3" type="audio/mpeg"/><enclosure url="/e.png" type="image/png"/>'), 'https://ex.com/e.png', 'relative URL resolved');
+  assert.equal(img('<description>&lt;img src="https://t.ex.com/p.gif" width="1" height="1"&gt;&lt;img src="https://ex.com/real.jpg"&gt;</description>'), 'https://ex.com/real.jpg');
+  assert.equal(img('<description><![CDATA[<img src="javascript:alert(1)">]]></description>'), '');
+  assert.equal(img('<description><![CDATA[<img src="data:image/png;base64,AAAA">]]></description>'), '');
+  assert.equal(img('<description>no image</description>'), '');
+});

@@ -31,7 +31,7 @@ export async function listArticles(db, q) {
   const w = articleWhere(q);
   const { results } = await db
     .prepare(
-      `SELECT a.id, a.url, a.title, a.snippet, a.author, a.published_at, a.is_read, a.is_starred,
+      `SELECT a.id, a.url, a.title, a.snippet, a.author, a.published_at, a.is_read, a.is_starred, a.image_url,
               f.id AS feed_id, f.title AS feed_title, t.id AS topic_id, t.name AS topic_name
          FROM articles a
          JOIN feeds f ON f.id = a.feed_id
@@ -114,6 +114,12 @@ export function getFeed(db, id) {
   return db.prepare('SELECT * FROM feeds WHERE id = ?').bind(id).first();
 }
 
+/** @param {any} db @param {number} id @returns {Promise<string>} '' if the article has no image */
+export async function getArticleImageUrl(db, id) {
+  const row = await db.prepare('SELECT image_url FROM articles WHERE id = ?').bind(id).first();
+  return row?.image_url ?? '';
+}
+
 /** @param {any} db @param {string} url */
 export function getFeedByUrl(db, url) {
   return db.prepare('SELECT * FROM feeds WHERE url = ?').bind(url).first();
@@ -167,11 +173,11 @@ export async function insertArticles(db, feedId, items) {
   if (!items.length) return 0;
   const now = Date.now();
   const stmt = db.prepare(
-    `INSERT OR IGNORE INTO articles (feed_id, guid_hash, url, title, snippet, author, published_at, fetched_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR IGNORE INTO articles (feed_id, guid_hash, url, title, snippet, author, published_at, fetched_at, image_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const results = await db.batch(
-    items.map((i) => stmt.bind(feedId, i.guidHash, i.url, i.title, i.snippet, i.author, i.publishedAt, now))
+    items.map((i) => stmt.bind(feedId, i.guidHash, i.url, i.title, i.snippet, i.author, i.publishedAt, now, i.imageUrl))
   );
   return results.reduce((/** @type {number} */ n, /** @type {any} */ r) => n + (r.meta?.changes ?? 0), 0);
 }

@@ -9,10 +9,10 @@ const FETCH_TIMEOUT_MS = 10_000;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const BASE_INTERVAL_MS = 30 * 60 * 1000;
 const MAX_BACKOFF_MS = 24 * 60 * 60 * 1000;
-const USER_AGENT = 'rss-feed-worker/1.0 (personal feed reader)';
+export const USER_AGENT = 'rss-feed-worker/1.0 (personal feed reader)';
 
 /** @param {string} s */
-async function sha256Hex(s) {
+export async function sha256Hex(s) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
@@ -66,6 +66,7 @@ async function toRows(items) {
       title: item.title,
       snippet: item.snippet,
       author: item.author,
+      imageUrl: item.imageUrl,
       // Unknown or future dates: use "now", keeping document order stable.
       publishedAt: item.publishedAt && item.publishedAt <= now + 60_000 ? item.publishedAt : now - i,
     }))

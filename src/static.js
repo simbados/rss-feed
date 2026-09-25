@@ -35,7 +35,8 @@ h1 { font-size: 20px; margin: 0; }
 .toolbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
 .filters { display: flex; gap: 12px; text-transform: capitalize; }
 .toolbar form { margin-left: auto; }
-.item { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.item { padding: 12px 0; border-bottom: 1px solid var(--line); display: flow-root; }
+.thumb { float: right; width: 88px; height: 88px; object-fit: cover; margin: 2px 0 6px 12px; border-radius: 6px; background: var(--line); }
 .item h2 { font-size: 16px; margin: 0 0 2px; }
 .item h2 a { text-decoration: none; }
 .item h2 a:hover { text-decoration: underline; }
@@ -118,6 +119,11 @@ export const JS = `'use strict';
       form.submit(); // fall back to a normal post
     }
   });
+
+  // Images the proxy could not deliver (404) are removed instead of showing a broken icon.
+  document.addEventListener('error', (e) => {
+    if (e.target instanceof HTMLImageElement && e.target.classList.contains('thumb')) e.target.remove();
+  }, true);
 
   // Opening an article marks it read.
   document.addEventListener('click', (e) => {
