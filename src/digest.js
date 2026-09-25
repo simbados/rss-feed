@@ -9,6 +9,7 @@ import { sendToAll } from './push.js';
 export const DIGEST_TIME_ZONE = 'Europe/Berlin';
 export const DIGEST_HOUR = 19;
 const MAX_BODY = 200;
+const MAX_SITES = 5;
 
 /**
  * Local calendar date and hour in `timeZone`.
@@ -40,20 +41,39 @@ export function digestDueDate(now, lastSentDate) {
 }
 
 /**
+ * Short site name for the summary: the domain without "www." ("lebensmittelwarnung.de"), taken from the
+ * site URL, else the feed URL, else the feed title.
+ * @param {{ title: string, siteUrl?: string, feedUrl?: string }} row
+ */
+export function siteName(row) {
+  for (const url of [row.siteUrl, row.feedUrl]) {
+    try {
+      if (url) return new URL(url).hostname.replace(/^www\./, '');
+    } catch {}
+  }
+  return row.title || '?';
+}
+
+/**
  * Notification text from per-feed counts, or null when there is nothing new.
+ * Feeds of the same site are added up; the top sites are listed, the rest as "+N more".
  * The order (and later a selection) is decided here — this is where scoring will plug in.
- * @param {{ title: string, count: number }[]} rows
+ * @param {{ title: string, siteUrl?: string, feedUrl?: string, count: number }[]} rows
  * @returns {import('./push.js').PushMessage | null}
  */
 export function buildDigest(rows) {
-  const total = rows.reduce((n, r) => n + r.count, 0);
+  /** @type {Map<string, number>} */
+  const perSite = new Map();
+  for (const r of rows) perSite.set(siteName(r), (perSite.get(siteName(r)) ?? 0) + r.count);
+  const total = [...perSite.values()].reduce((n, c) => n + c, 0);
   if (!total) return null;
-  const body = [...rows]
-    .sort((a, b) => b.count - a.count || a.title.localeCompare(b.title))
-    .map((r) => `${r.title} ${r.count}`)
-    .join(' · ');
+
+  const sites = [...perSite].filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const shown = sites.slice(0, MAX_SITES).map(([name, c]) => `${name} ${c}`);
+  if (sites.length > MAX_SITES) shown.push(`+${sites.length - MAX_SITES} more`);
+  const body = shown.join(' · ');
   return {
-    title: `RSS: ${total} new`,
+    title: `${total} new`, // iOS already shows the app name above it
     body: body.length > MAX_BODY ? `${body.slice(0, MAX_BODY - 1)}…` : body,
     url: '/',
     tag: 'daily-digest',

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDigest, digestDueDate, localDateHour } from '../src/digest.js';
+import { buildDigest, digestDueDate, localDateHour, siteName } from '../src/digest.js';
 import { parseSubscription } from '../src/push.js';
 
 test('digest is due from 19:00 Berlin time, in summer (UTC+2) and winter (UTC+1), once per day', () => {
@@ -13,18 +13,30 @@ test('digest is due from 19:00 Berlin time, in summer (UTC+2) and winter (UTC+1)
   assert.deepEqual(localDateHour(Date.UTC(2026, 9, 25, 0, 30), 'Europe/Berlin'), { date: '2026-10-25', hour: 2 }, 'DST ends');
 });
 
-test('buildDigest: total in the title, feeds by count, nothing new → null', () => {
+test('buildDigest: short title, site domains by count, feeds of one site added up, nothing new → null', () => {
   assert.equal(buildDigest([]), null);
   assert.equal(buildDigest([{ title: 'a', count: 0 }]), null);
-  assert.deepEqual(buildDigest([{ title: 'Tagesschau', count: 2 }, { title: 'heise', count: 12 }, { title: 'Lebensmittelwarnung', count: 3 }]), {
-    title: 'RSS: 17 new',
-    body: 'heise 12 · Lebensmittelwarnung 3 · Tagesschau 2',
-    url: '/',
-    tag: 'daily-digest',
-  });
-  const long = buildDigest(Array.from({ length: 40 }, (_, i) => ({ title: `Feed number ${i}`, count: 1 })));
-  assert.equal(long.body.length, 200);
-  assert.ok(long.body.endsWith('…'));
+  assert.deepEqual(
+    buildDigest([
+      { title: 'tagesschau.de - Die Nachrichten der ARD', siteUrl: 'https://www.tagesschau.invalid/', count: 2 },
+      { title: 'heise online News', siteUrl: 'https://www.heise.invalid/', count: 12 },
+      { title: 'Lebensmittelwarnung.de - Bayern - Alle Produkttypen', siteUrl: 'https://www.lmw.invalid/', count: 100 },
+      { title: 'Lebensmittelwarnung.de - Berlin - Alle Produkttypen', siteUrl: 'https://www.lmw.invalid/', count: 5 },
+    ]),
+    { title: '119 new', body: 'lmw.invalid 105 · heise.invalid 12 · tagesschau.invalid 2', url: '/', tag: 'daily-digest' }
+  );
+});
+
+test('buildDigest: at most five sites, the rest as "+N more"', () => {
+  const d = buildDigest(Array.from({ length: 8 }, (_, i) => ({ title: `F${i}`, siteUrl: `https://s${i}.invalid/`, count: 8 - i })));
+  assert.equal(d.title, '36 new');
+  assert.equal(d.body, 's0.invalid 8 · s1.invalid 7 · s2.invalid 6 · s3.invalid 5 · s4.invalid 4 · +3 more');
+});
+
+test('siteName: site URL, else feed URL, else title', () => {
+  assert.equal(siteName({ title: 'T', siteUrl: 'https://www.a.invalid/x', feedUrl: 'https://b.invalid/feed' }), 'a.invalid');
+  assert.equal(siteName({ title: 'T', siteUrl: '', feedUrl: 'https://feeds.b.invalid/rss' }), 'feeds.b.invalid');
+  assert.equal(siteName({ title: 'Only a title' }), 'Only a title');
 });
 
 test('parseSubscription accepts a real-looking subscription and rejects everything else', () => {

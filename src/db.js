@@ -323,12 +323,12 @@ export function setState(db, key, value) {
 /**
  * Unread, visible articles fetched after `since`, counted per enabled feed with the given notify mode.
  * @param {any} db @param {number} since epoch ms @param {string} notify
- * @returns {Promise<{ title: string, count: number }[]>}
+ * @returns {Promise<{ title: string, siteUrl: string, feedUrl: string, count: number }[]>}
  */
 export async function newArticleCounts(db, since, notify) {
   const { results } = await db
     .prepare(
-      `SELECT f.title AS title, COUNT(*) AS count
+      `SELECT f.title AS title, f.site_url AS siteUrl, f.url AS feedUrl, COUNT(*) AS count
          FROM articles a JOIN feeds f ON f.id = a.feed_id
         WHERE a.fetched_at > ? AND a.is_read = 0 AND a.is_hidden = 0 AND f.enabled = 1 AND f.notify = ?
         GROUP BY f.id`
