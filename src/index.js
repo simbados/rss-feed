@@ -53,6 +53,18 @@ function errorResponse(status, message) {
   return htmlResponse(views.errorPage(status, message), status);
 }
 
+/**
+ * Deployed version from the version_metadata binding, e.g. "a1b2c3d4 · 2026-09-25 14:03 UTC".
+ * Cloudflare assigns a new id to every deployment; `wrangler dev` has none.
+ * @param {any} env
+ */
+function versionLabel(env) {
+  const v = env.CF_VERSION_METADATA;
+  if (!v?.id) return 'dev';
+  const when = v.timestamp ? ` · ${String(v.timestamp).slice(0, 16).replace('T', ' ')} UTC` : '';
+  return `${String(v.id).slice(0, 8)}${when}`;
+}
+
 /** Positive integer or null. @param {unknown} v */
 function toId(v) {
   const n = Number(v);
@@ -104,6 +116,7 @@ async function renderTimeline(env, url) {
       active: 'home',
       topics: nav.topics,
       totalUnread: nav.totalUnread,
+      version: versionLabel(env),
       currentTopic: q.topic,
       body: views.timeline({ articles, hasMore, q, heading }),
     })
@@ -123,6 +136,7 @@ async function renderFeeds(env, extra = {}, status = 200) {
       active: 'feeds',
       topics: nav.topics,
       totalUnread: nav.totalUnread,
+      version: versionLabel(env),
       body: views.feedsPage({ feeds, topics: nav.topics, ...extra }),
     }),
     status
@@ -138,6 +152,7 @@ async function renderTopics(env, error) {
       active: 'topics',
       topics: nav.topics,
       totalUnread: nav.totalUnread,
+      version: versionLabel(env),
       body: views.topicsPage({ topics: nav.topics, error }),
     }),
     error ? 400 : 200

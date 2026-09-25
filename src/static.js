@@ -50,6 +50,7 @@ h1 { font-size: 20px; margin: 0; }
 .snippet { margin: 6px 0; color: var(--fg); opacity: .85; overflow-wrap: anywhere; }
 .actions { display: flex; gap: 6px; font-size: 13px; }
 .actions form, .row-actions form, form.inline { display: inline; margin: 0; }
+.version { position: fixed; left: 8px; bottom: 6px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
 .pager { display: flex; justify-content: space-between; padding: 16px 0; }
 .empty { color: var(--muted); padding: 24px 0; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; }

@@ -39,7 +39,7 @@ function qs(params) {
 }
 
 /**
- * @param {{ title: string, active: string, topics: any[], totalUnread: number, currentTopic?: number|null, body: unknown }} p
+ * @param {{ title: string, active: string, topics: any[], totalUnread: number, currentTopic?: number|null, version: string, body: unknown }} p
  */
 export function layout(p) {
   return html`<!doctype html>
@@ -71,6 +71,7 @@ export function layout(p) {
   </aside>
   <main>${p.body}</main>
 </div>
+<footer class="version">${p.version}</footer>
 </body>
 </html>`;
 }
