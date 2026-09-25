@@ -21,3 +21,14 @@ ACCESS_TEAM_DOMAIN = "simbados.cloudflareaccess.com"
 # "Application Audience (AUD) Tag" of the Access application
 ACCESS_AUD = "f1345a103dc2cdea7c523b8a7ef21271f729119a4838d43539dafe1cd079f601"
 # For local dev only, put DEV_NO_AUTH=1 into .dev.vars (never set it here).
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true
+persist = true
+
+[observability.traces]
+enabled = false
+head_sampling_rate = 1
+persist = true
