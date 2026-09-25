@@ -1,0 +1,23 @@
+name = "rss-feed"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Only serve via the custom domain that sits behind Cloudflare Access.
+workers_dev = false
+routes = [{ pattern = "rss.simbados.com", custom_domain = true }]
+
+[triggers]
+crons = ["*/30 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rss-feed"
+database_id = "6f7137b9-a6b9-4808-970f-772ddea13cdd"
+migrations_dir = "migrations"
+
+[vars]
+# Zero Trust team domain, e.g. "myteam.cloudflareaccess.com"
+ACCESS_TEAM_DOMAIN = "simbados.cloudflareaccess.com"
+# "Application Audience (AUD) Tag" of the Access application
+ACCESS_AUD = "f1345a103dc2cdea7c523b8a7ef21271f729119a4838d43539dafe1cd079f601"
+# For local dev only, put DEV_NO_AUTH=1 into .dev.vars (never set it here).

@@ -1,0 +1,12 @@
+{
+  "name": "rss-feed",
+  "private": true,
+  "type": "module",
+  "description": "Personal RSS reader on Cloudflare Workers + D1. No runtime dependencies.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "^4.134.0"
+  }
+}

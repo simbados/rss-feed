@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<rss version="2.0">
+<channel>
+  <title>Evil &lt;script&gt;alert('feed')&lt;/script&gt;</title>
+  <link>javascript:alert(1)</link>
+  <item>
+    <title><![CDATA[<script>alert('title')</script>Pwned "><img src=x onerror=alert(1)>]]></title>
+    <link>javascript:alert(document.cookie)</link>
+    <guid>evil-1</guid>
+    <author>"><svg onload=alert(1)></author>
+    <description><![CDATA[<img src=x onerror=alert(2)><script>alert(3)</script>&lt;script&gt;alert(4)&lt;/script&gt;<a href="javascript:alert(5)">x</a>]]></description>
+  </item>
+  <item>
+    <title>&amp;lt;img src=x onerror=alert(6)&amp;gt; double-encoded</title>
+    <link>data:text/html,&lt;script&gt;alert(7)&lt;/script&gt;</link>
+    <guid>evil-2</guid>
+    <description>&amp;#x3C;script&amp;#x3E;alert(8)&amp;#x3C;/script&amp;#x3E; &#x3C;iframe src="javascript:alert(9)"&#x3E;&#x3C;/iframe&#x3E;</description>
+  </item>
+  <item>
+    <title>Attribute breakout</title>
+    <link>https://ok.example/"onmouseover="alert(10)</link>
+    <guid>evil-3</guid>
+  </item>
+</channel>
+</rss>
