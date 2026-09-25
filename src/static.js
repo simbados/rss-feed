@@ -8,10 +8,14 @@ export const CSS = `
   --accent: #b45309; --accent-bg: #fef3c7; --danger: #b91c1c;
   color-scheme: light dark;
 }
+/* Dark colours: from the system setting unless the theme button forced light, or forced dark. */
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #161412; --fg: #e7e5e4; --muted: #a8a29e; --line: #2e2a27; --card: #1f1c1a;
+  :root:not([data-theme="light"]) { --bg: #161412; --fg: #e7e5e4; --muted: #a8a29e; --line: #2e2a27; --card: #1f1c1a;
           --accent: #f59e0b; --accent-bg: #3a2a0d; --danger: #f87171; }
 }
+:root[data-theme="dark"] { --bg: #161412; --fg: #e7e5e4; --muted: #a8a29e; --line: #2e2a27; --card: #1f1c1a;
+  --accent: #f59e0b; --accent-bg: #3a2a0d; --danger: #f87171; color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -27,6 +31,7 @@ input[type=text], input[type=url], select { background: var(--card); border: 1px
 html { scroll-padding-top: 56px; }
 .brand { font-weight: 700; text-decoration: none; color: var(--accent); }
 .top nav { display: flex; gap: 16px; }
+.theme-toggle { margin-left: auto; font-size: 13px; white-space: nowrap; }
 .top nav a, .side a, .filters a { text-decoration: none; color: var(--muted); }
 .top nav a.on, .filters a.on { color: var(--fg); font-weight: 600; }
 .wrap { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; max-width: 1100px; margin: 0 auto; padding: 16px; }
@@ -40,7 +45,7 @@ h1 { font-size: 20px; margin: 0; }
 .toolbar form { margin-left: auto; }
 .item { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .head { display: flex; align-items: flex-start; gap: 12px; }
-.head > div { min-width: 0; }
+.head > div { flex: 1; min-width: 0; }
 .thumb { flex: none; width: auto; height: auto; max-height: 88px; max-width: min(160px, 40%); border-radius: 6px; }
 .item h2 { font-size: 16px; margin: 0 0 2px; }
 .item h2 a { text-decoration: none; }
@@ -74,6 +79,7 @@ table.feeds tr.disabled { opacity: .55; }
 @media (max-width: 760px) {
   .wrap { grid-template-columns: 1fr; }
   .side { position: static; flex-direction: row; flex-wrap: wrap; }
+  .version { display: none; }
   .add input[type=url] { min-width: 0; width: 100%; }
   table.feeds thead { display: none; }
   table.feeds td { display: block; border: 0; padding: 4px 0; }
@@ -126,6 +132,26 @@ export const JS = `'use strict';
     }
   });
 
+  // Theme button: Auto (system setting) → Light → Dark. /theme.js applies the choice before first paint.
+  const THEMES = { '': '\\u25D0 Auto', light: '\\u2600 Light', dark: '\\u263E Dark' };
+  const NEXT = { '': 'light', light: 'dark', dark: '' };
+  const toggle = document.querySelector('.theme-toggle');
+  if (toggle) {
+    const show = () => { toggle.textContent = THEMES[document.documentElement.dataset.theme || '']; };
+    show();
+    toggle.hidden = false;
+    toggle.addEventListener('click', () => {
+      const next = NEXT[document.documentElement.dataset.theme || ''];
+      if (next) document.documentElement.dataset.theme = next;
+      else delete document.documentElement.dataset.theme;
+      try {
+        if (next) localStorage.setItem('theme', next);
+        else localStorage.removeItem('theme');
+      } catch {}
+      show();
+    });
+  }
+
   // Images the proxy could not deliver (404) are removed instead of showing a broken icon.
   document.addEventListener('error', (e) => {
     if (e.target instanceof HTMLImageElement && e.target.classList.contains('thumb')) e.target.remove();
@@ -141,3 +167,30 @@ export const JS = `'use strict';
   });
 })();
 `;
+
+// Loaded synchronously in <head> so a saved theme applies before the first paint.
+export const THEME_JS = `'use strict';
+try {
+  const t = localStorage.getItem('theme');
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+} catch {}
+`;
+
+// App icon: a white "R" (drawn as strokes, so no font is needed) on the light theme's accent colour.
+export const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<rect width="512" height="512" rx="96" fill="#b45309"/>
+<path d="M172 392V120h88a80 80 0 0 1 0 160h-88M248 280l92 112" fill="none" stroke="#fafaf9" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+`;
+
+// Web app manifest (PWA step 1: installable, opens without browser bars).
+export const MANIFEST = JSON.stringify({
+  name: 'RSS Reader',
+  short_name: 'RSS',
+  start_url: '/',
+  scope: '/',
+  display: 'standalone',
+  background_color: '#fafaf9',
+  theme_color: '#fafaf9',
+  icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
+});

@@ -50,6 +50,11 @@ export function layout(p) {
 <meta name="referrer" content="same-origin">
 <title>${p.title} · RSS</title>
 <link rel="stylesheet" href="/app.css">
+<link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="RSS">
+<script src="/theme.js"></script>
 <script src="/app.js" defer></script>
 </head>
 <body>
@@ -60,6 +65,7 @@ export function layout(p) {
     <a href="/feeds" class="${p.active === 'feeds' ? 'on' : ''}">Feeds</a>
     <a href="/topics" class="${p.active === 'topics' ? 'on' : ''}">Topics</a>
   </nav>
+  <button type="button" class="theme-toggle" hidden>Theme</button>
 </header>
 <div class="wrap">
   <aside class="side">
@@ -82,7 +88,6 @@ export function articleItem(a) {
   const starAction = a.is_starred ? 'unstar' : 'star';
   return html`<article class="item${a.is_read ? ' is-read' : ''}${a.is_starred ? ' is-starred' : ''}" data-id="${a.id}">
   <div class="head">
-    ${a.image_url ? html`<img class="thumb" src="/img/${a.id}" alt="" loading="lazy" decoding="async">` : ''}
     <div>
       <h2><a class="title" href="${safeUrl(a.url)}" target="_blank" rel="noopener noreferrer">${a.title || '(untitled)'}</a></h2>
       <div class="meta">
@@ -92,6 +97,7 @@ export function articleItem(a) {
         · ${time(a.published_at)}
       </div>
     </div>
+    ${a.image_url ? html`<img class="thumb" src="/img/${a.id}" alt="" loading="lazy" decoding="async">` : ''}
   </div>
   ${a.snippet ? html`<p class="snippet">${a.snippet}</p>` : ''}
   <div class="actions">

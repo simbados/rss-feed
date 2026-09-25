@@ -76,6 +76,7 @@ test('feeds page and layout escape feed/topic names', () => {
     active: 'feeds',
     topics: [{ id: 1, name: evil, unread: 3 }],
     totalUnread: 3,
+    version: evil,
     body: feedsPage({
       feeds: [{ id: 1, url: 'javascript:alert(1)', site_url: '', title: evil, topic_id: 1, enabled: 1, article_count: 0, last_error: evil, error_count: 1 }],
       topics: [{ id: 1, name: evil }],
@@ -84,6 +85,7 @@ test('feeds page and layout escape feed/topic names', () => {
     }),
   }).toString();
   assert.doesNotMatch(page, /<script>alert/);
-  assert.match(page, /<script src="\/app\.js" defer><\/script>/, 'only our own script tag');
-  assert.equal(page.match(/<script/g).length, 1);
+  assert.match(page, /<script src="\/theme\.js"><\/script>/);
+  assert.match(page, /<script src="\/app\.js" defer><\/script>/);
+  assert.equal(page.match(/<script/g).length, 2, 'only our own two script tags');
 });

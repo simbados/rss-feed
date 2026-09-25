@@ -1,6 +1,7 @@
 # Plan: PWA for iPhone
 
-Status: **planned, not started** (saved 2026-09-24). Open questions at the bottom.
+Status: **step 1 implemented, waiting for the iPhone test** (2026-09-25). Decisions: step 1 first; icon = white "R" on the
+accent colour `#b45309` (`ICON_SVG` in `src/static.js`). iPhone needs a PNG `apple-touch-icon` (step 3).
 
 ## Goal
 Install the reader on the iPhone home screen (Safari → Share → Add to Home Screen): opens like an app
@@ -48,9 +49,9 @@ Not in scope: push notifications; full article text offline (would need HTML san
 new `test/pwa.test.js`, `README.md` (install + Access session notes).
 
 ## Open questions
-1. Deployment for step 1 (D1 database, Access app, domain) — done by the user.
-2. Own icon, or generate a simple RSS symbol?
-3. Start with steps 2–7 + local check before step 1, or step 1 first?
+1. ~~Deployment for step 1~~ — done: `rss.simbados.com`, Worker-level Access, deployed via Workers Builds.
+2. ~~Icon~~ — generated "R" SVG in the light theme colours.
+3. ~~Order~~ — step 1 first.
 
 ## Related (later)
 Suggested order discussed: weighting → weekly email digest (Cloudflare Email Routing `send_email`)

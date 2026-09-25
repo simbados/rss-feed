@@ -6,7 +6,7 @@ import * as db from './db.js';
 import { addFeed, refreshFeed, runScheduled } from './fetcher.js';
 import { SafeHtml } from './html.js';
 import { articleImage } from './images.js';
-import { CSS, JS } from './static.js';
+import { CSS, ICON_SVG, JS, MANIFEST, THEME_JS } from './static.js';
 import * as views from './views.js';
 
 const CSP = [
@@ -14,6 +14,7 @@ const CSP = [
   "script-src 'self'",
   "style-src 'self'",
   "img-src 'self'",
+  "manifest-src 'self'",
   "connect-src 'self'",
   "form-action 'self'",
   "base-uri 'none'",
@@ -278,6 +279,12 @@ async function handle(request, env, ctx) {
         return respond(CSS, 200, { 'content-type': 'text/css; charset=utf-8', 'cache-control': 'private, max-age=3600' });
       case '/app.js':
         return respond(JS, 200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'private, max-age=3600' });
+      case '/theme.js':
+        return respond(THEME_JS, 200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'private, max-age=3600' });
+      case '/manifest.webmanifest':
+        return respond(MANIFEST, 200, { 'content-type': 'application/manifest+json', 'cache-control': 'private, max-age=3600' });
+      case '/icon.svg':
+        return respond(ICON_SVG, 200, { 'content-type': 'image/svg+xml', 'cache-control': 'private, max-age=86400' });
       case '/favicon.ico':
         return respond(null, 204);
       default:
