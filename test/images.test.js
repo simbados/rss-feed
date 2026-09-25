@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isAllowedImageType, readCapped } from '../src/images.js';
+import { readCapped } from '../src/fetcher.js';
+import { isAllowedImageType } from '../src/images.js';
 
 test('only raster image types are proxied', () => {
   for (const t of ['image/jpeg', 'image/png; charset=binary', 'IMAGE/WEBP', 'image/gif', 'image/avif', 'image/jpg']) {

@@ -59,6 +59,11 @@ h1 { font-size: 20px; margin: 0; }
 .actions { display: flex; gap: 6px; font-size: 13px; }
 .actions form, .row-actions form, form.inline { display: inline; margin: 0; }
 .version { position: fixed; left: 8px; bottom: 6px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
+.push { margin-bottom: 16px; }
+.push h2 { font-size: 16px; margin: 0 0 4px; }
+.push p { margin: 4px 0 8px; }
+.devices { margin: 12px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.devices li { margin: 4px 0; }
 .pager { display: flex; justify-content: space-between; padding: 16px 0; }
 .empty { color: var(--muted); padding: 24px 0; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; }
@@ -152,6 +157,84 @@ export const JS = `'use strict';
     });
   }
 
+  // Service worker (push notifications). With Trusted Types, register() only accepts a script URL
+  // created by a policy; this one allows exactly /sw.js (CSP: trusted-types sw-url).
+  if ('serviceWorker' in navigator) {
+    const swUrl = window.trustedTypes
+      ? window.trustedTypes.createPolicy('sw-url', {
+          createScriptURL: (u) => {
+            if (u !== '/sw.js') throw new TypeError('unexpected script URL');
+            return u;
+          },
+        }).createScriptURL('/sw.js')
+      : '/sw.js';
+    navigator.serviceWorker.register(swUrl).catch(() => {});
+  }
+
+  // Notifications box on the Feeds page: subscribe this device to the daily summary.
+  const pushBox = document.querySelector('.push');
+  if (pushBox) setUpPush(pushBox).catch((err) => { pushBox.querySelector('.push-status').textContent = 'Error: ' + err.message; });
+
+  async function setUpPush(box) {
+    const status = box.querySelector('.push-status');
+    const [on, off, test] = ['on', 'off', 'test'].map((k) => box.querySelector('[data-push="' + k + '"]'));
+    const say = (text) => { status.textContent = text; };
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+      say('On iPhone, notifications need the installed app: Share \\u2192 Add to Home Screen, then open it from there.');
+      return;
+    }
+    if (!box.dataset.key) { say('Not configured on the server (VAPID_PUBLIC_KEY is missing).'); return; }
+    const reg = await navigator.serviceWorker.ready;
+
+    const show = async () => {
+      const sub = await reg.pushManager.getSubscription();
+      on.hidden = !!sub;
+      off.hidden = test.hidden = !sub;
+      say(sub ? 'On for this device \\u2013 daily summary at 19:00.'
+        : Notification.permission === 'denied' ? 'Blocked \\u2013 allow notifications for this app in the system settings.'
+        : 'Off for this device.');
+    };
+    const run = (fn) => async () => {
+      try { await fn(); } catch (err) { say('Failed: ' + err.message); return; }
+      await show();
+    };
+
+    on.addEventListener('click', run(async () => {
+      // Must be the first await: iOS only asks when called directly from the tap.
+      if ((await Notification.requestPermission()) !== 'granted') return;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(box.dataset.key) });
+      await postJson('/push/subscribe', sub.toJSON());
+    }));
+    off.addEventListener('click', run(async () => {
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub) return;
+      await postJson('/push/unsubscribe', { endpoint: sub.endpoint });
+      await sub.unsubscribe();
+    }));
+    test.addEventListener('click', async () => {
+      try {
+        const r = await postJson('/push/test', {});
+        say(r.sent ? 'Test notification sent.' : 'Not sent: ' + r.error);
+      } catch (err) { say('Failed: ' + err.message); }
+    });
+    await show();
+  }
+
+  async function postJson(url, body) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }
+
+  function b64urlToBytes(s) {
+    const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4));
+    return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  }
+
   // Images the proxy could not deliver (404) are removed instead of showing a broken icon.
   document.addEventListener('error', (e) => {
     if (e.target instanceof HTMLImageElement && e.target.classList.contains('thumb')) e.target.remove();
@@ -192,5 +275,54 @@ export const MANIFEST = JSON.stringify({
   display: 'standalone',
   background_color: '#fafaf9',
   theme_color: '#fafaf9',
-  icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    { src: '/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
+  ],
 });
+
+// Service worker, served as /sw.js. Push notifications only for now (offline cache comes later).
+export const SW_JS = `'use strict';
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+
+self.addEventListener('push', (e) => {
+  let msg = {};
+  try { msg = e.data ? e.data.json() : {}; } catch {}
+  const text = (v, fallback) => (typeof v === 'string' && v ? v : fallback);
+  e.waitUntil(self.registration.showNotification(text(msg.title, 'RSS'), {
+    body: text(msg.body, ''),
+    tag: text(msg.tag, 'rss'),
+    icon: '/icon-192.png',
+    data: { url: text(msg.url, '/') },
+  }));
+});
+
+// Only paths on this site are opened, whatever the message says.
+function sitePath(url) {
+  if (typeof url !== 'string') return '/';
+  try {
+    const u = new URL(url, self.location.origin);
+    return u.origin === self.location.origin ? u.pathname + u.search : '/';
+  } catch {
+    return '/';
+  }
+}
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const target = sitePath(e.notification.data && e.notification.data.url);
+  e.waitUntil((async () => {
+    for (const client of await self.clients.matchAll({ type: 'window', includeUncontrolled: true })) {
+      try {
+        await client.focus();
+        await client.navigate(target);
+        return;
+      } catch {}
+    }
+    await self.clients.openWindow(target);
+  })());
+});
+`;

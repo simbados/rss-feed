@@ -38,6 +38,19 @@ Requires `wrangler` (the only tool; not a runtime dependency).
 
 The Worker fails closed: without a valid Access JWT every request gets `401`.
 
+## Notifications (daily summary)
+
+The installed app (iPhone: Safari → Share → Add to Home Screen) can get one notification per day at
+19:00 Europe/Berlin with the number of new articles per feed. Setup, once:
+
+1. `node scripts/vapid-keys.mjs` → put `VAPID_PUBLIC_KEY` into `wrangler.toml`, and the private key
+   into the Worker secret `VAPID_PRIVATE_KEY` (dashboard → Settings → Variables and Secrets, type Secret).
+2. Deploy (`npm run deploy` also applies the migrations).
+3. In the installed app: Feeds → Notifications → *Turn on*, then *Send test*.
+
+The Worker encrypts each message for the device (RFC 8291) and signs it with the private key (RFC 8292);
+Apple's push service only forwards it. See `docs/plan-push.md`.
+
 ## Local development
 
 ```sh

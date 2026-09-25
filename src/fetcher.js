@@ -1,6 +1,7 @@
 // @ts-check
 // Fetching feeds: cron refresh, single-feed refresh, and adding new feeds (with discovery).
 
+import { maybeSendDigest } from './digest.js';
 import { parseFeed, discoverFeeds, NotAFeedError } from './parser.js';
 import * as db from './db.js';
 
@@ -15,6 +16,33 @@ export const USER_AGENT = 'rss-feed-worker/1.0 (personal feed reader)';
 export async function sha256Hex(s) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * The whole body, or null as soon as it exceeds `max` bytes.
+ * @param {ReadableStream<Uint8Array>} body @param {number} max
+ */
+export async function readCapped(body, max) {
+  const reader = body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
 }
 
 /** @param {unknown} url */
@@ -47,10 +75,14 @@ async function httpGet(url, cond = {}) {
   if (res.status === 304) return { status: 304, res, body: '' };
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const length = Number(res.headers.get('content-length') || 0);
-  if (length > MAX_BODY_BYTES) throw new Error('Feed too large');
-  const body = await res.text();
-  if (body.length > MAX_BODY_BYTES) throw new Error('Feed too large');
-  return { status: res.status, res, body };
+  if (length > MAX_BODY_BYTES || !res.body) {
+    await res.body?.cancel();
+    throw new Error(res.body ? 'Feed too large' : 'Empty response');
+  }
+  // Capped read: a server that streams without content-length can't make us buffer more than the limit.
+  const bytes = await readCapped(res.body, MAX_BODY_BYTES);
+  if (!bytes) throw new Error('Feed too large');
+  return { status: res.status, res, body: new TextDecoder().decode(bytes) };
 }
 
 /**
@@ -79,7 +111,13 @@ async function toRows(items) {
  * @param {any} feed row from the feeds table
  */
 export async function refreshFeed(env, feed) {
+  const errorCount = (feed.error_count || 0) + 1;
+  const backoff = Math.min(BASE_INTERVAL_MS * 2 ** errorCount, MAX_BACKOFF_MS);
   try {
+    // Record the attempt as failed *before* fetching; success overwrites it. If the invocation is
+    // killed (CPU/memory limit on a hostile feed), the feed is backed off instead of being retried
+    // first on every run.
+    await db.markFetchAttempt(env.DB, feed.id, { nextFetchAt: Date.now() + backoff, errorCount });
     const r = await httpGet(feed.url, { etag: feed.etag, lastModified: feed.last_modified });
     if (r.status === 304) {
       await db.recordFetch(env.DB, feed.id, { ok: true, nextFetchAt: Date.now() + BASE_INTERVAL_MS, errorCount: 0 });
@@ -98,8 +136,6 @@ export async function refreshFeed(env, feed) {
     });
     return { id: feed.id, added };
   } catch (err) {
-    const errorCount = (feed.error_count || 0) + 1;
-    const backoff = Math.min(BASE_INTERVAL_MS * 2 ** errorCount, MAX_BACKOFF_MS);
     const message = /** @type {Error} */ (err).message || String(err);
     await db
       .recordFetch(env.DB, feed.id, { ok: false, error: message.slice(0, 500), nextFetchAt: Date.now() + backoff, errorCount })
@@ -110,12 +146,17 @@ export async function refreshFeed(env, feed) {
 
 /** Cron entry point. @param {any} env */
 export async function runScheduled(env) {
+  // Digest and purge first: they must not depend on every feed parsing within the run's limits.
+  // (The summary at 19:00 counts what earlier runs fetched; this run's articles go into tomorrow's.)
+  await maybeSendDigest(env).catch((err) => console.error('digest failed', err));
+  await db.purgeOldArticles(env.DB).catch((err) => console.error('purge failed', err));
+
   const feeds = await db.dueFeeds(env.DB, FEEDS_PER_RUN);
   const results = await Promise.all(feeds.map((/** @type {any} */ f) => refreshFeed(env, f)));
-  await db.purgeOldArticles(env.DB);
   const added = results.reduce((n, r) => n + r.added, 0);
-  const failed = results.filter((r) => r.error).length;
-  console.log(`cron: ${feeds.length} feeds checked, ${added} new articles, ${failed} errors`);
+  const failed = results.filter((r) => r.error);
+  for (const r of failed) console.warn(`feed ${r.id} failed: ${String(r.error).slice(0, 200)}`);
+  console.log(`cron: ${feeds.length} feeds checked, ${added} new articles, ${failed.length} errors`);
 }
 
 /**

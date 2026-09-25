@@ -4,7 +4,7 @@
 // URLs that came from a feed can be fetched (this is not an open proxy).
 
 import * as db from './db.js';
-import { USER_AGENT, sha256Hex } from './fetcher.js';
+import { USER_AGENT, readCapped, sha256Hex } from './fetcher.js';
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
@@ -20,37 +20,14 @@ export function isAllowedImageType(contentType) {
 }
 
 /**
- * The whole body, or null as soon as it exceeds `max` bytes.
- * @param {ReadableStream<Uint8Array>} body @param {number} max
- */
-export async function readCapped(body, max) {
-  const reader = body.getReader();
-  const chunks = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(value);
-  }
-  const out = new Uint8Array(size);
-  let offset = 0;
-  for (const c of chunks) {
-    out.set(c, offset);
-    offset += c.byteLength;
-  }
-  return out;
-}
-
-/**
  * @param {string} url
  * @returns {Promise<{ body: Uint8Array, type: string } | null>} null on any failure
  */
 async function fetchImage(url) {
+  const refuse = (/** @type {string} */ reason) => {
+    console.warn(`img: refused ${new URL(url).hostname}: ${reason}`);
+    return null;
+  };
   let res;
   try {
     res = await fetch(url, {
@@ -58,16 +35,17 @@ async function fetchImage(url) {
       redirect: 'follow',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
-  } catch {
-    return null;
+  } catch (err) {
+    return refuse(String(err).slice(0, 100));
   }
   const type = res.headers.get('content-type') ?? '';
   if (!res.ok || !res.body || !isAllowedImageType(type) || Number(res.headers.get('content-length')) > MAX_IMAGE_BYTES) {
     await res.body?.cancel();
-    return null;
+    return refuse(!res.ok ? `HTTP ${res.status}` : !isAllowedImageType(type) ? `type ${type.slice(0, 50) || 'missing'}` : 'too large');
   }
   const body = await readCapped(res.body, MAX_IMAGE_BYTES).catch(() => null);
-  return body && { body, type: type.split(';')[0].trim().toLowerCase() };
+  if (!body) return refuse('too large or read failed');
+  return { body, type: type.split(';')[0].trim().toLowerCase() };
 }
 
 /**

@@ -22,6 +22,8 @@
 
 export const MAX_ITEMS = 100;
 export const SNIPPET_LENGTH = 300;
+/** Longer URLs are dropped: real ones are far shorter, and a hostile feed could otherwise fill D1. */
+export const MAX_URL_LENGTH = 2000;
 
 export class NotAFeedError extends Error {}
 
@@ -46,14 +48,100 @@ export function decodeEntities(/** @type {string} */ s) {
   });
 }
 
+// Linear-time scanning. Feeds are untrusted: a regex like /<x>[\s\S]*?<\/x>/g rescans to the end of the
+// document for every unclosed <x>, which is O(n²) — a few hundred KB of "<item><item>…" then takes
+// seconds and gets the cron killed. These helpers find the end with indexOf/one forward search and
+// stop at the first start that has no end, so every character is looked at a bounded number of times.
+
+/**
+ * Replace every `start … end` span with `replacement(inner)`; a start without an end is left as is.
+ * @param {string} s @param {string} start @param {string} end @param {(inner: string) => string} replacement
+ */
+function replaceSpans(s, start, end, replacement) {
+  let out = '';
+  let pos = 0;
+  for (;;) {
+    const a = s.indexOf(start, pos);
+    if (a === -1) break;
+    const b = s.indexOf(end, a + start.length);
+    if (b === -1) break;
+    out += s.slice(pos, a) + replacement(s.slice(a + start.length, b));
+    pos = b + end.length;
+  }
+  return out + s.slice(pos);
+}
+
+const DROPPED_ELEMENTS = /<(script|style|noscript|iframe|object|svg|math)\b/gi;
+
+/**
+ * Remove script-like elements with their content. An open tag without a closing tag is left to
+ * stripTags (so "Why <svg> beats PNG" keeps its text); once a name has no closing tag, later opens
+ * of it aren't searched again — that keeps this linear (at most one full search per name).
+ * @param {string} s
+ */
+function dropElements(s) {
+  let out = '';
+  let pos = 0;
+  const unclosed = new Set();
+  const open = new RegExp(DROPPED_ELEMENTS.source, 'gi');
+  /** @type {RegExpExecArray | null} */
+  let m;
+  while ((m = open.exec(s))) {
+    const name = m[1].toLowerCase();
+    if (unclosed.has(name)) continue;
+    const close = new RegExp(`</${name}\\s*>`, 'gi');
+    close.lastIndex = open.lastIndex;
+    const c = close.exec(s);
+    if (!c) {
+      unclosed.add(name);
+      continue;
+    }
+    out += s.slice(pos, m.index) + ' ';
+    pos = open.lastIndex = close.lastIndex;
+  }
+  return out + s.slice(pos);
+}
+
+/**
+ * Replace every tag (`<a …>`, `</p>`, `<!…>`, `<?…>`) with a space. A `<` without a later `>` ends the scan.
+ * @param {string} s
+ */
+function stripTags(s) {
+  let out = '';
+  let pos = 0;
+  const open = /<\/?[a-z!?]/gi;
+  /** @type {RegExpExecArray | null} */
+  let m;
+  while ((m = open.exec(s))) {
+    const close = s.indexOf('>', m.index);
+    if (close === -1) break;
+    out += s.slice(pos, m.index) + ' ';
+    pos = open.lastIndex = close + 1;
+  }
+  return out + s.slice(pos);
+}
+
+/**
+ * Attribute strings of all `<name …>` tags in an HTML fragment (e.g. every <img> or <link>).
+ * @param {string} html @param {string} name
+ */
+function tagAttributes(html, name) {
+  const out = [];
+  const open = new RegExp(`<${name}(?=[\\s/>])`, 'gi');
+  /** @type {RegExpExecArray | null} */
+  let m;
+  while ((m = open.exec(html))) {
+    const close = html.indexOf('>', open.lastIndex);
+    if (close === -1) break;
+    out.push(html.slice(open.lastIndex, close));
+    open.lastIndex = close + 1;
+  }
+  return out;
+}
+
 /** Turn an HTML fragment into collapsed plain text. */
 export function htmlToText(/** @type {string} */ s) {
-  return decodeEntities(
-    s
-      .replace(/<!--[\s\S]*?-->/g, ' ')
-      .replace(/<(script|style|noscript|iframe|object|svg|math)\b[\s\S]*?<\/\1\s*>/gi, ' ')
-      .replace(/<\/?[a-z!?][^>]*>/gi, ' ')
-  )
+  return decodeEntities(stripTags(dropElements(replaceSpans(s, '<!--', '-->', () => ' '))))
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -80,10 +168,14 @@ class Doc {
   constructor(xml) {
     /** @type {string[]} */
     this.cdata = [];
-    this.xml = xml
-      .replace(/^\uFEFF/, '') // byte order mark
-      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, content) => `\u0000${this.cdata.push(content) - 1}\u0000`)
-      .replace(/<!--[\s\S]*?-->/g, '');
+    // Raw NULs are replaced first: they would otherwise forge CDATA placeholders (\u0000N\u0000) and
+    // let a tiny title expand into copies of a huge CDATA section.
+    this.xml = replaceSpans(
+      replaceSpans(xml.replace(/^\uFEFF/, '').replaceAll('\u0000', '\uFFFD'), '<![CDATA[', ']]>', (content) => `\u0000${this.cdata.push(content) - 1}\u0000`),
+      '<!--',
+      '-->',
+      () => ''
+    );
   }
 
   /**
@@ -102,13 +194,32 @@ class Doc {
  * All elements named `tag` (prefix-aware, e.g. "dc:creator") within `xml`.
  * @param {string} xml
  * @param {string} tag
+ * @param {number} [limit] stop after this many elements
  * @returns {{attrs: Record<string,string>, inner: string}[]}
  */
-function elements(xml, tag) {
+function elements(xml, tag, limit = Infinity) {
   const t = escapeRe(tag);
-  const re = new RegExp(`<${t}(\\s[^>]*?)?(?:/>|>([\\s\\S]*?)</${t}\\s*>)`, 'gi');
+  const open = new RegExp(`<${t}(?=[\\s/>])`, 'gi');
+  const close = new RegExp(`</${t}\\s*>`, 'gi');
   const out = [];
-  for (const m of xml.matchAll(re)) out.push({ attrs: parseAttrs(m[1] || ''), inner: m[2] || '' });
+  /** @type {RegExpExecArray | null} */
+  let m;
+  while (out.length < limit && (m = open.exec(xml))) {
+    const gt = xml.indexOf('>', open.lastIndex);
+    if (gt === -1) break;
+    const selfClosing = xml[gt - 1] === '/';
+    const attrs = parseAttrs(xml.slice(open.lastIndex, selfClosing ? gt - 1 : gt));
+    if (selfClosing) {
+      out.push({ attrs, inner: '' });
+      open.lastIndex = gt + 1;
+      continue;
+    }
+    close.lastIndex = gt + 1;
+    const c = close.exec(xml);
+    if (!c) break; // no closing tag anywhere after this one → none for later ones either
+    out.push({ attrs, inner: xml.slice(gt + 1, c.index) });
+    open.lastIndex = close.lastIndex;
+  }
   return out;
 }
 
@@ -117,7 +228,9 @@ function parseAttrs(s) {
   /** @type {Record<string,string>} */
   const attrs = {};
   // Values may be "double", 'single' or unquoted (unquoted is common in minified HTML).
-  for (const m of s.matchAll(/([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g)) {
+  // The lookbehind makes a name start only at the beginning of a word, so a long word that isn't
+  // followed by "=" is tried once, not once per character (which would be O(n²)).
+  for (const m of s.matchAll(/(?<![\w:.-])([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g)) {
     attrs[m[1].toLowerCase()] = decodeEntities(m[2] ?? m[3] ?? m[4] ?? '');
   }
   return attrs;
@@ -140,9 +253,10 @@ function firstText(doc, xml, tags) {
 /** @param {string} url @param {string} base */
 function resolveUrl(url, base) {
   const trimmed = url.trim();
-  if (!trimmed) return '';
+  if (!trimmed || trimmed.length > MAX_URL_LENGTH) return '';
   try {
-    return new URL(trimmed, base || undefined).href;
+    const href = new URL(trimmed, base || undefined).href;
+    return href.length > MAX_URL_LENGTH ? '' : href;
   } catch {
     return '';
   }
@@ -185,8 +299,8 @@ function findImage(doc, xml) {
   if (media) return media.attrs.url;
   for (const tag of ['description', 'content:encoded', 'content', 'summary']) {
     for (const el of elements(xml, tag)) {
-      for (const m of doc.text(el.inner).matchAll(/<img\b([^>]*)>/gi)) {
-        const a = parseAttrs(m[1]);
+      for (const attrs of tagAttributes(doc.text(el.inner), 'img')) {
+        const a = parseAttrs(attrs);
         if (a.src && a.width !== '1' && a.height !== '1') return a.src;
       }
     }
@@ -200,7 +314,13 @@ function findImage(doc, xml) {
  * @param {string} s
  */
 export function isTemplatePlaceholder(s) {
-  return /^\$!?\{.+\}$|^\$!?[a-z_]\w*(?:\.\w+|\(.*\))+$|^\{\{.*\}\}$/i.test(s.trim());
+  const t = s.trim();
+  if (t.length > 200) return false; // template leftovers are short
+  // No nested quantifiers that could split the same text in several ways, so a hostile title
+  // can't make the regex backtrack exponentially (e.g. "$a()()()…()!").
+  if (/^\$!?\{.+\}$|^\{\{.*\}\}$/.test(t)) return true;
+  // $name, $name.member…, optionally one call: $name.fn(…) — needs at least one "." or "(".
+  return /^\$!?[a-z_]\w*(?:\.\w+)*(?:\(.*\)(?:\.\w+)*)?$/i.test(t) && /[.(]/.test(t);
 }
 
 /**
@@ -288,8 +408,9 @@ export function parseFeed(xml, feedUrl = '') {
 
   /** @type {FeedItem[]} */
   const items = [];
-  for (const el of elements(src, itemTag)) {
-    if (items.length >= MAX_ITEMS) break;
+  // At most MAX_ITEMS elements are examined, kept or not: 5 MB of empty <item/> must not cost
+  // hundreds of thousands of iterations.
+  for (const el of elements(src, itemTag, MAX_ITEMS)) {
     const x = el.inner;
     const guidEl = elements(x, format === 'atom' ? 'id' : 'guid')[0];
     const guid = guidEl ? doc.text(guidEl.inner).trim() : el.attrs['rdf:about'] || '';
@@ -321,7 +442,7 @@ export function parseFeed(xml, feedUrl = '') {
       snippet: truncate(body, SNIPPET_LENGTH),
       author: truncate(author, 200),
       publishedAt,
-      imageUrl: /^https?:\/\//i.test(imageUrl) && imageUrl.length <= 2000 ? imageUrl : '',
+      imageUrl: /^https?:\/\//i.test(imageUrl) ? imageUrl : '',
     });
   }
 
@@ -335,8 +456,8 @@ export function parseFeed(xml, feedUrl = '') {
  */
 export function discoverFeeds(htmlSrc, pageUrl) {
   const urls = [];
-  for (const m of htmlSrc.matchAll(/<link\b([^>]*)>/gi)) {
-    const a = parseAttrs(m[1]);
+  for (const attrs of tagAttributes(htmlSrc, 'link')) {
+    const a = parseAttrs(attrs);
     const rel = (a.rel || '').toLowerCase().split(/\s+/);
     const type = (a.type || '').toLowerCase();
     if (rel.includes('alternate') && /^application\/(rss|atom|rdf)\+xml$/.test(type) && a.href) {

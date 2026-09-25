@@ -24,7 +24,7 @@ Not in scope: push notifications; full article text offline (would need HTML san
    `/manifest.webmanifest`, linked with `crossorigin="use-credentials"` (else fetched without cookie →
    blocked by Access). `apple-touch-icon` 180×180, `theme-color` light/dark, `viewport-fit=cover` +
    safe-area CSS padding.
-3. **Icons** (`scripts/make-icons.mjs` → generated `src/icons.js`): 180, 192, 512, 512 maskable.
+3. **Icons** (`scripts/make-icons.mjs` → generated `src/icons/*.png`, imported by the Worker): 180, 192, 512, 512 maskable.
    Generated as PNG with Node's built-in `zlib` only; embedded as base64, served by the Worker.
    Or use the user's own icon.
 4. **Service worker** (`/sw.js`, source in `src/static.js`):
@@ -45,7 +45,7 @@ Not in scope: push notifications; full article text offline (would need HTML san
    fresh again when online.
 
 ## Files affected
-`src/static.js`, `src/views.js`, `src/index.js`, new `src/icons.js`, new `scripts/make-icons.mjs`,
+`src/static.js`, `src/views.js`, `src/index.js`, new `src/icons/*.png`, new `scripts/make-icons.mjs`,
 new `test/pwa.test.js`, `README.md` (install + Access session notes).
 
 ## Open questions

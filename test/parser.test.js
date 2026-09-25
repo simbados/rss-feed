@@ -6,44 +6,44 @@ import { parseFeed, discoverFeeds, decodeEntities, htmlToText, isTemplatePlaceho
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
 test('RSS 2.0: channel metadata', () => {
-  const f = parseFeed(fixture('rss2.xml'), 'https://news.example.com/feed.xml');
+  const f = parseFeed(fixture('rss2.xml'), 'https://news.example.invalid/feed.xml');
   assert.equal(f.format, 'rss');
   assert.equal(f.title, 'Example News & More');
-  assert.equal(f.siteUrl, 'https://news.example.com/');
+  assert.equal(f.siteUrl, 'https://news.example.invalid/');
   assert.equal(f.items.length, 3, 'commented-out item is ignored');
 });
 
 test('RSS 2.0: items', () => {
-  const [a, b, c] = parseFeed(fixture('rss2.xml'), 'https://news.example.com/feed.xml').items;
+  const [a, b, c] = parseFeed(fixture('rss2.xml'), 'https://news.example.invalid/feed.xml').items;
   assert.equal(a.title, 'First headline');
-  assert.equal(a.url, 'https://news.example.com/a/1');
+  assert.equal(a.url, 'https://news.example.invalid/a/1');
   assert.equal(a.guid, 'news-1');
   assert.equal(a.author, 'Jane Doe');
   assert.equal(a.snippet, 'Body with markup & an entity.');
   assert.equal(a.publishedAt, Date.UTC(2025, 5, 10, 4, 0, 0));
 
   assert.equal(b.title, 'Second: CDATA title with inside', 'CDATA with </item> does not split the item');
-  assert.equal(b.url, 'https://news.example.com/a/2', 'permalink guid used as link');
+  assert.equal(b.url, 'https://news.example.invalid/a/2', 'permalink guid used as link');
   assert.equal(b.snippet, 'Escaped HTML description');
   assert.equal(b.publishedAt, Date.UTC(2025, 5, 11, 7, 30, 0));
 
-  assert.equal(c.url, 'https://news.example.com/a/3', 'relative link resolved');
+  assert.equal(c.url, 'https://news.example.invalid/a/3', 'relative link resolved');
   assert.equal(c.publishedAt, null);
 });
 
 test('Atom', () => {
-  const f = parseFeed(fixture('atom.xml'), 'https://blog.example.org/atom.xml');
+  const f = parseFeed(fixture('atom.xml'), 'https://blog.example.invalid/atom.xml');
   assert.equal(f.format, 'atom');
   assert.equal(f.title, 'Example Blog');
-  assert.equal(f.siteUrl, 'https://blog.example.org/');
+  assert.equal(f.siteUrl, 'https://blog.example.invalid/');
   const [a, b] = f.items;
   assert.equal(a.title, 'Atom <3 entry');
-  assert.equal(a.url, 'https://blog.example.org/posts/1', 'rel=alternate preferred over rel=edit');
-  assert.equal(a.guid, 'tag:blog.example.org,2025:1');
+  assert.equal(a.url, 'https://blog.example.invalid/posts/1', 'rel=alternate preferred over rel=edit');
+  assert.equal(a.guid, 'tag:blog.example.invalid,2025:1');
   assert.equal(a.author, 'Entry Author');
   assert.equal(a.snippet, 'Short summary.');
   assert.equal(a.publishedAt, Date.UTC(2025, 5, 12, 18, 30, 2), 'published preferred over updated');
-  assert.equal(b.url, 'https://blog.example.org/posts/2');
+  assert.equal(b.url, 'https://blog.example.invalid/posts/2');
   assert.equal(b.snippet, 'Content only');
   assert.equal(b.publishedAt, Date.UTC(2025, 5, 14, 6, 0, 0));
 });
@@ -53,8 +53,8 @@ test('RSS 1.0 / RDF', () => {
   assert.equal(f.format, 'rdf');
   assert.equal(f.title, 'RDF Site');
   assert.equal(f.items.length, 1);
-  assert.equal(f.items[0].url, 'https://rdf.example.net/story/1');
-  assert.equal(f.items[0].guid, 'https://rdf.example.net/story/1');
+  assert.equal(f.items[0].url, 'https://rdf.example.invalid/story/1');
+  assert.equal(f.items[0].guid, 'https://rdf.example.invalid/story/1');
   assert.equal(f.items[0].publishedAt, Date.UTC(2025, 5, 1, 12));
 });
 
@@ -124,7 +124,7 @@ test('lebensmittelwarnung.de: titles rebuilt from the labelled description field
 });
 
 test('template placeholder titles fall back to the URL on other hosts', () => {
-  const [a] = parseFeed(fixture('lebensmittelwarnung.xml'), 'https://mirror.example.com/feed.xml').items;
+  const [a] = parseFeed(fixture('lebensmittelwarnung.xml'), 'https://mirror.example.invalid/feed.xml').items;
   assert.equal(a.title, a.url);
   assert.match(a.snippet, /^Bildquelle/, 'no site rule applied');
 });
@@ -149,15 +149,84 @@ test('lebensmittelwarnung.de: product photo from the description', () => {
 
 test('item images: media and enclosures before inline <img>, pixels and non-http skipped', () => {
   const rss = (item) =>
-    `<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>T</title><link>https://ex.com/</link>
-     <item><title>I</title><link>https://ex.com/1</link>${item}</item></channel></rss>`;
-  const img = (item) => parseFeed(rss(item), 'https://ex.com/feed').items[0].imageUrl;
+    `<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>T</title><link>https://ex.invalid/</link>
+     <item><title>I</title><link>https://ex.invalid/1</link>${item}</item></channel></rss>`;
+  const img = (item) => parseFeed(rss(item), 'https://ex.invalid/feed').items[0].imageUrl;
 
-  assert.equal(img('<media:thumbnail url="https://cdn.ex.com/t.jpg"/><description>&lt;img src="https://ex.com/b.jpg"&gt;</description>'), 'https://cdn.ex.com/t.jpg');
-  assert.equal(img('<media:content url="https://cdn.ex.com/v.mp4" medium="video"/><media:content url="https://cdn.ex.com/p.jpg" medium="image"/>'), 'https://cdn.ex.com/p.jpg');
-  assert.equal(img('<enclosure url="https://cdn.ex.com/a.mp3" type="audio/mpeg"/><enclosure url="/e.png" type="image/png"/>'), 'https://ex.com/e.png', 'relative URL resolved');
-  assert.equal(img('<description>&lt;img src="https://t.ex.com/p.gif" width="1" height="1"&gt;&lt;img src="https://ex.com/real.jpg"&gt;</description>'), 'https://ex.com/real.jpg');
+  assert.equal(img('<media:thumbnail url="https://cdn.ex.invalid/t.jpg"/><description>&lt;img src="https://ex.invalid/b.jpg"&gt;</description>'), 'https://cdn.ex.invalid/t.jpg');
+  assert.equal(img('<media:content url="https://cdn.ex.invalid/v.mp4" medium="video"/><media:content url="https://cdn.ex.invalid/p.jpg" medium="image"/>'), 'https://cdn.ex.invalid/p.jpg');
+  assert.equal(img('<enclosure url="https://cdn.ex.invalid/a.mp3" type="audio/mpeg"/><enclosure url="/e.png" type="image/png"/>'), 'https://ex.invalid/e.png', 'relative URL resolved');
+  assert.equal(img('<description>&lt;img src="https://t.ex.invalid/p.gif" width="1" height="1"&gt;&lt;img src="https://ex.invalid/real.jpg"&gt;</description>'), 'https://ex.invalid/real.jpg');
   assert.equal(img('<description><![CDATA[<img src="javascript:alert(1)">]]></description>'), '');
   assert.equal(img('<description><![CDATA[<img src="data:image/png;base64,AAAA">]]></description>'), '');
   assert.equal(img('<description>no image</description>'), '');
+});
+
+test('hostile markup is parsed in linear time (no quadratic regex scans)', () => {
+  const mb = 1024 * 1024;
+  const cases = {
+    'unclosed <item>': () => parseFeed('<rss><channel>' + '<item>'.repeat(mb / 6), 'https://x.test/feed'),
+    'unclosed CDATA': () => parseFeed('<rss><channel><item><title>' + '<![CDATA['.repeat(mb / 9), 'https://x.test/feed'),
+    'unclosed comments': () => parseFeed('<rss><channel>' + '<!--'.repeat(mb / 4), 'https://x.test/feed'),
+    'tags without >': () => htmlToText('<a'.repeat(mb / 2)),
+    'unclosed <script>': () => htmlToText('<script>'.repeat(mb / 8)),
+    '<link without >': () => discoverFeeds('<link '.repeat(mb / 6), 'https://x.test/'),
+    'long attribute word': () => parseFeed('<rss><channel><item><enclosure a="' + 'b'.repeat(mb) + '></enclosure></item>', 'https://x.test/feed'),
+    '<img without >': () => parseFeed('<rss><channel><item><title>t</title><description><![CDATA[' + '<img '.repeat(mb / 5) + ']]></description></item>', 'https://x.test/feed'),
+    'template-like title (exponential before)': () => isTemplatePlaceholder('$a' + '()'.repeat(40) + '!'),
+    '1 MB of empty <item/>': () => parseFeed('<rss><channel>' + '<item/>'.repeat(mb / 7), 'https://x.test/feed'),
+    'NUL placeholders into big CDATA': () =>
+      parseFeed(
+        '<rss><channel><![CDATA[' + 'x'.repeat(2 * mb) + ']]><item><title>' + '\u00000\u0000'.repeat(1000) + '</title><link>https://x.test/1</link></item>',
+        'https://x.test/feed'
+      ),
+  };
+  for (const [name, run] of Object.entries(cases)) {
+    const start = performance.now();
+    try {
+      run();
+    } catch {}
+    // Linear: ~10 ms for 1 MB. The old regexes took minutes here; 500 ms leaves room for slow CI machines.
+    assert.ok(performance.now() - start < 500, `${name}: ${Math.round(performance.now() - start)} ms`);
+  }
+});
+
+test('raw NUL characters cannot pull in CDATA from elsewhere', () => {
+  const f = parseFeed(
+    '<rss><channel><![CDATA[secret-elsewhere]]><item><title>A\u00000\u0000B</title><link>https://x.test/1</link></item></channel></rss>',
+    'https://x.test/feed'
+  );
+  assert.equal(f.items[0].title, 'A�0�B');
+});
+
+test('text mentioning an unclosed <svg>/<script> keeps the rest of the text', () => {
+  assert.equal(htmlToText('Why <svg> beats PNG'), 'Why beats PNG');
+  assert.equal(htmlToText('Using <math.h> in C'), 'Using in C');
+  assert.equal(htmlToText('a <script>x</script> b <script> c'), 'a b c', 'closed one dropped, unclosed one only stripped');
+});
+
+test('elements: attributes, self-closing tags and an unclosed tag at the end', () => {
+  const f = parseFeed(
+    `<rss><channel><title>T</title><link>https://ex.invalid/</link>
+     <item><title>A</title><link>https://ex.invalid/a</link><enclosure url="https://ex.invalid/a.jpg" type="image/jpeg"/></item>
+     <ITEM><title>B</title><link>https://ex.invalid/b</link></ITEM>
+     <item><title>unclosed</title>`,
+    'https://ex.invalid/feed'
+  );
+  assert.deepEqual(f.items.map((i) => i.title), ['A', 'B'], 'case-insensitive; trailing unclosed item ignored');
+  assert.equal(f.items[0].imageUrl, 'https://ex.invalid/a.jpg');
+});
+
+test('overlong article and site URLs are dropped', () => {
+  const long = `https://ex.invalid/${'a'.repeat(2100)}`;
+  const f = parseFeed(
+    `<rss><channel><title>T</title><link>${long}</link>
+     <item><title>Long</title><link>${long}</link><guid>g1</guid></item>
+     <item><title>Normal</title><link>https://ex.invalid/ok</link></item></channel></rss>`,
+    'https://ex.invalid/feed'
+  );
+  assert.equal(f.siteUrl, '');
+  assert.equal(f.items[0].url, '');
+  assert.equal(f.items[0].title, 'Long');
+  assert.equal(f.items[1].url, 'https://ex.invalid/ok');
 });

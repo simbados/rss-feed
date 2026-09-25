@@ -3,6 +3,8 @@
 
 export const PAGE_SIZE = 50;
 export const RETENTION_MS = 60 * 24 * 60 * 60 * 1000;
+/** Unstarred articles kept per feed; bounds what one (hostile) feed can store in D1. */
+export const MAX_ARTICLES_PER_FEED = 3000;
 
 /**
  * @typedef {{ topic?: number|null, feed?: number|null, filter: 'unread'|'all'|'starred', page: number }} ArticleQuery
@@ -208,12 +210,34 @@ export function recordFetch(db, id, r) {
     .run();
 }
 
-/** @param {any} db */
-export function purgeOldArticles(db) {
+/**
+ * Mark a fetch as started, pessimistically: as if it failed. recordFetch overwrites it on completion.
+ * @param {any} db @param {number} id @param {{ nextFetchAt: number, errorCount: number }} r
+ */
+export function markFetchAttempt(db, id, r) {
   return db
-    .prepare('DELETE FROM articles WHERE is_starred = 0 AND fetched_at < ?')
-    .bind(Date.now() - RETENTION_MS)
+    .prepare(
+      `UPDATE feeds SET last_fetched_at = ?, next_fetch_at = ?, error_count = ?,
+              last_error = 'Fetch did not finish (timeout or too slow to process)' WHERE id = ?`
+    )
+    .bind(Date.now(), r.nextFetchAt, r.errorCount, id)
     .run();
+}
+
+/** Unstarred articles: delete after RETENTION_MS, and per feed beyond the newest MAX_ARTICLES_PER_FEED. @param {any} db */
+export function purgeOldArticles(db) {
+  return db.batch([
+    db.prepare('DELETE FROM articles WHERE is_starred = 0 AND fetched_at < ?').bind(Date.now() - RETENTION_MS),
+    db
+      .prepare(
+        `DELETE FROM articles WHERE id IN (
+           SELECT id FROM (
+             SELECT id, ROW_NUMBER() OVER (PARTITION BY feed_id ORDER BY published_at DESC, id DESC) AS n
+               FROM articles WHERE is_starred = 0)
+            WHERE n > ?)`
+      )
+      .bind(MAX_ARTICLES_PER_FEED),
+  ]);
 }
 
 /** @param {any} db */
@@ -238,4 +262,78 @@ export function deleteTopic(db, id) {
     db.prepare('UPDATE feeds SET topic_id = NULL WHERE topic_id = ?').bind(id),
     db.prepare('DELETE FROM topics WHERE id = ?').bind(id),
   ]);
+}
+
+// Push notifications
+
+/** @param {any} db @param {{ endpoint: string, p256dh: string, auth: string }} s */
+export function upsertSubscription(db, s) {
+  return db
+    .prepare(
+      `INSERT INTO push_subscriptions (endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, last_error = ''`
+    )
+    .bind(s.endpoint, s.p256dh, s.auth, Date.now())
+    .run();
+}
+
+/** @param {any} db @param {string} endpoint */
+export function deleteSubscription(db, endpoint) {
+  return db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(endpoint).run();
+}
+
+/** @param {any} db @returns {Promise<{ id: number, endpoint: string, p256dh: string, auth: string }[]>} */
+export async function listSubscriptions(db) {
+  const { results } = await db.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions').all();
+  return results;
+}
+
+/** @param {any} db @returns {Promise<{ id: number, endpoint: string, created_at: number, last_error: string }[]>} */
+export async function listDevices(db) {
+  const { results } = await db
+    .prepare('SELECT id, endpoint, created_at, last_error FROM push_subscriptions ORDER BY created_at')
+    .all();
+  return results;
+}
+
+/** @param {any} db @param {number} id */
+export function deleteSubscriptionById(db, id) {
+  return db.prepare('DELETE FROM push_subscriptions WHERE id = ?').bind(id).run();
+}
+
+/** @param {any} db @param {number} id @param {string} error */
+export function setSubscriptionError(db, id, error) {
+  return db.prepare('UPDATE push_subscriptions SET last_error = ? WHERE id = ?').bind(error, id).run();
+}
+
+/** @param {any} db @param {string} key @returns {Promise<string|null>} */
+export async function getState(db, key) {
+  const row = await db.prepare('SELECT value FROM app_state WHERE key = ?').bind(key).first();
+  return row?.value ?? null;
+}
+
+/** @param {any} db @param {string} key @param {string} value */
+export function setState(db, key, value) {
+  return db
+    .prepare('INSERT INTO app_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .bind(key, value)
+    .run();
+}
+
+/**
+ * Unread, visible articles fetched after `since`, counted per enabled feed with the given notify mode.
+ * @param {any} db @param {number} since epoch ms @param {string} notify
+ * @returns {Promise<{ title: string, count: number }[]>}
+ */
+export async function newArticleCounts(db, since, notify) {
+  const { results } = await db
+    .prepare(
+      `SELECT f.title AS title, COUNT(*) AS count
+         FROM articles a JOIN feeds f ON f.id = a.feed_id
+        WHERE a.fetched_at > ? AND a.is_read = 0 AND a.is_hidden = 0 AND f.enabled = 1 AND f.notify = ?
+        GROUP BY f.id`
+    )
+    .bind(since, notify)
+    .all();
+  return results;
 }

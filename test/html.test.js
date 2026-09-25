@@ -25,8 +25,8 @@ test('nested templates, arrays, raw() and empty values', () => {
 });
 
 test('safeUrl only allows http(s)', () => {
-  assert.equal(safeUrl('https://example.com/a?b=1'), 'https://example.com/a?b=1');
-  assert.equal(safeUrl('http://example.com'), 'http://example.com/');
+  assert.equal(safeUrl('https://example.invalid/a?b=1'), 'https://example.invalid/a?b=1');
+  assert.equal(safeUrl('http://example.invalid'), 'http://example.invalid/');
   for (const bad of ['javascript:alert(1)', ' JavaScript:alert(1)', 'data:text/html,x', 'vbscript:x', '/relative', '', null, 'java\tscript:alert(1)']) {
     assert.equal(safeUrl(bad), '#', String(bad));
   }
@@ -82,6 +82,8 @@ test('feeds page and layout escape feed/topic names', () => {
       topics: [{ id: 1, name: evil }],
       error: evil,
       formUrl: evil,
+      pushKey: evil,
+      devices: [{ id: 7, host: evil, createdAt: Date.now(), lastError: evil }],
     }),
   }).toString();
   assert.doesNotMatch(page, /<script>alert/);

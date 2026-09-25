@@ -52,6 +52,7 @@ export function layout(p) {
 <link rel="stylesheet" href="/app.css">
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="RSS">
 <script src="/theme.js"></script>
@@ -148,11 +149,30 @@ function topicSelect(topics, selected, name = 'topic') {
   </select>`;
 }
 
-/** @param {{ feeds: any[], topics: any[], error?: string, message?: string, formUrl?: string }} p */
+/**
+ * @param {{ feeds: any[], topics: any[], pushKey: string, devices: { id: number, host: string, createdAt: number, lastError: string }[],
+ *   error?: string, message?: string, formUrl?: string }} p
+ */
 export function feedsPage(p) {
   return html`<h1>Feeds</h1>
 ${p.error ? html`<p class="flash error">${p.error}</p>` : ''}
 ${p.message ? html`<p class="flash">${p.message}</p>` : ''}
+<section class="card push" data-key="${p.pushKey}">
+  <h2>Notifications</h2>
+  <p class="sub">A daily summary of new articles at 19:00.</p>
+  <p class="push-status">Checking…</p>
+  <button type="button" data-push="on" hidden>Turn on</button>
+  <button type="button" data-push="off" hidden>Turn off</button>
+  <button type="button" data-push="test" hidden>Send test</button>
+  ${p.devices.length
+    ? html`<ul class="devices">
+    ${p.devices.map(
+      (d) => html`<li>${d.host} · added ${time(d.createdAt)}${d.lastError ? html` · <span class="error">⚠ ${d.lastError}</span>` : ''}
+      <form method="post" action="/push/devices/${d.id}/delete" class="inline"><button type="submit" class="danger">Remove</button></form></li>`
+    )}
+  </ul>`
+    : ''}
+</section>
 <form method="post" action="/feeds" class="card add">
   <label>Feed or website URL <input type="url" name="url" required placeholder="https://example.com/feed.xml" value="${p.formUrl ?? ''}"></label>
   <label>Topic ${topicSelect(p.topics, null)}</label>
