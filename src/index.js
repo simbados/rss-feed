@@ -159,7 +159,6 @@ async function renderTimeline(env, user, url) {
       totalUnread: nav.totalUnread,
       version: versionLabel(env),
       assetVersion: assetVersion(env),
-      userEmail: user.email,
       currentTopic: q.topic,
       body: views.timeline({ articles, hasMore, q, heading }),
     })
@@ -188,8 +187,7 @@ async function renderFeeds(env, user, extra = {}, status = 200) {
       totalUnread: nav.totalUnread,
       version: versionLabel(env),
       assetVersion: assetVersion(env),
-      userEmail: user.email,
-      body: views.feedsPage({ feeds, topics: nav.topics, pushKey: env.VAPID_PUBLIC_KEY ?? '', devices, muteRules, ...extra }),
+      body: views.feedsPage({ feeds, topics: nav.topics, pushKey: env.VAPID_PUBLIC_KEY ?? '', devices, muteRules, userEmail: user.email, ...extra }),
     }),
     status
   );
@@ -206,7 +204,6 @@ async function renderTopics(env, user, error) {
       totalUnread: nav.totalUnread,
       version: versionLabel(env),
       assetVersion: assetVersion(env),
-      userEmail: user.email,
       body: views.topicsPage({ topics: nav.topics, error }),
     }),
     error ? 400 : 200
@@ -236,7 +233,6 @@ async function renderMuteForm(env, user, url, form = {}) {
       totalUnread: nav.totalUnread,
       version: versionLabel(env),
       assetVersion: assetVersion(env),
-      userEmail: user.email,
       body: views.muteForm({
         article,
         field,

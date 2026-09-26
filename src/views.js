@@ -40,7 +40,7 @@ function qs(params) {
 }
 
 /**
- * @param {{ title: string, active: string, topics: any[], totalUnread: number, currentTopic?: number|null, version: string, assetVersion: string, userEmail: string, body: unknown }} p
+ * @param {{ title: string, active: string, topics: any[], totalUnread: number, currentTopic?: number|null, version: string, assetVersion: string, body: unknown }} p
  */
 export function layout(p) {
   return html`<!doctype html>
@@ -70,7 +70,6 @@ export function layout(p) {
     <a href="/feeds" class="${p.active === 'feeds' ? 'on' : ''}">Feeds</a>
     <a href="/topics" class="${p.active === 'topics' ? 'on' : ''}">Topics</a>
   </nav>
-  <span class="who" title="Signed in as ${p.userEmail}">${p.userEmail}</span>
   <button type="button" class="theme-toggle" hidden>Theme</button>
 </header>
 <div class="wrap">
@@ -174,10 +173,11 @@ function topicSelect(topics, selected, name = 'topic') {
 
 /**
  * @param {{ feeds: any[], topics: any[], pushKey: string, devices: { id: number, host: string, createdAt: number, lastError: string }[],
- *   muteRules: any[], error?: string, message?: string, formUrl?: string }} p
+ *   muteRules: any[], userEmail: string, error?: string, message?: string, formUrl?: string }} p
  */
 export function feedsPage(p) {
   return html`<h1>Feeds</h1>
+<p class="sub who">Signed in as ${p.userEmail}</p>
 ${p.error ? html`<p class="flash error">${p.error}</p>` : ''}
 ${p.message ? html`<p class="flash">${p.message}</p>` : ''}
 <section class="card push" data-key="${p.pushKey}">

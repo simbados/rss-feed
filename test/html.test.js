@@ -78,7 +78,6 @@ test('feeds page and layout escape feed/topic names', () => {
     totalUnread: 3,
     version: evil,
     assetVersion: 'abc12345',
-    userEmail: evil,
     body: feedsPage({
       feeds: [{ id: 1, url: 'javascript:alert(1)', site_url: '', title: evil, topic_id: 1, enabled: 1, article_count: 0, last_error: evil, error_count: 1 }],
       topics: [{ id: 1, name: evil }],
@@ -87,15 +86,14 @@ test('feeds page and layout escape feed/topic names', () => {
       pushKey: evil,
       devices: [{ id: 7, host: evil, createdAt: Date.now(), lastError: evil }],
       muteRules: [{ id: 3, feed_id: 1, feed_title: evil, field: 'title', pattern: evil, hidden_count: 2 }],
+      userEmail: evil,
     }),
   }).toString();
   assert.doesNotMatch(page, /<script>alert/);
-  // The signed-in email is rendered in both places, escaped (not just absent).
+  // The signed-in email is shown on the Feeds page only, escaped (not just absent).
   const escaped = '&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;';
-  assert.ok(
-    page.includes(`<span class="who" title="Signed in as ${escaped}">${escaped}</span>`),
-    'header email present and escaped in attribute and text'
-  );
+  assert.ok(page.includes(`<p class="sub who">Signed in as ${escaped}</p>`), 'email on the feeds page, escaped');
+  assert.doesNotMatch(page.slice(0, page.indexOf('<main>')), /Signed in as/, 'not in the header');
   assert.match(page, /<script src="\/theme\.js\?v=abc12345"><\/script>/);
   assert.match(page, /<script type="module" src="\/app\.js\?v=abc12345"><\/script>/);
   assert.match(page, /<link rel="stylesheet" href="\/app\.css\?v=abc12345">/);

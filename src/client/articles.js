@@ -48,12 +48,14 @@ export function renderCounts(document, counts) {
  *   post: (url: string) => Promise<any> }} deps
  */
 export function setUpArticles({ document, window, location, store, post }) {
-  // Re-render what a reply changed.
+  // One subscriber per part of the page; each only looks at its own key of the reply.
   store.subscribe((_state, patch) => {
     for (const [id, s] of Object.entries(patch.articles ?? {})) {
       const el = document.querySelector('article[data-id="' + Number(id) + '"]');
       if (el) renderArticle(el, s);
     }
+  });
+  store.subscribe((_state, patch) => {
     if (patch.counts) renderCounts(document, patch.counts);
   });
 

@@ -29,8 +29,8 @@ input[type=text], input[type=url], select { background: var(--card); border: 1px
 html { scroll-padding-top: calc(56px + env(safe-area-inset-top)); }
 .brand { font-weight: 700; text-decoration: none; color: var(--accent); }
 .top nav { display: flex; gap: 16px; }
-.who { margin-left: auto; font-size: 12px; color: var(--muted); max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.theme-toggle { font-size: 13px; white-space: nowrap; }
+.who { margin: 4px 0 0; overflow-wrap: anywhere; }
+.theme-toggle { margin-left: auto; font-size: 13px; white-space: nowrap; }
 .top nav a, .side a, .filters a { text-decoration: none; color: var(--muted); }
 .top nav a.on, .filters a.on { color: var(--fg); font-weight: 600; }
 .wrap { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; max-width: 1100px; margin: 0 auto;

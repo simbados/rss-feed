@@ -19,7 +19,7 @@ test('icon is a self-contained SVG without script or external references', () =>
 });
 
 test('manifest is linked with credentials (else Access blocks it) and allowed by the CSP', () => {
-  const page = layout({ title: 't', active: 'home', topics: [], totalUnread: 0, version: 'v', assetVersion: 'v1', userEmail: 'me@x.test', body: '' }).toString();
+  const page = layout({ title: 't', active: 'home', topics: [], totalUnread: 0, version: 'v', assetVersion: 'v1', body: '' }).toString();
   assert.match(page, /<link rel="manifest" href="\/manifest\.webmanifest" crossorigin="use-credentials">/);
   const index = readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
   assert.match(index, /"manifest-src 'self'"/);
@@ -100,7 +100,7 @@ test('notification click opens only paths on this site', async () => {
 import { CSS, THEME_JS } from '../src/static.js';
 
 test('full-screen viewport and theme-color tags matching the page background', () => {
-  const page = layout({ title: 't', active: 'home', topics: [], totalUnread: 0, version: 'v', assetVersion: 'v1', userEmail: 'me@x.test', body: '' }).toString();
+  const page = layout({ title: 't', active: 'home', topics: [], totalUnread: 0, version: 'v', assetVersion: 'v1', body: '' }).toString();
   assert.match(page, /<meta name="viewport" content="[^"]*viewport-fit=cover">/);
   const light = CSS.match(/:root \{\s*--bg: (#[0-9a-f]{6})/)[1];
   const dark = CSS.match(/:root\[data-theme="dark"\] \{ --bg: (#[0-9a-f]{6})/)[1];
