@@ -30,7 +30,14 @@ html { scroll-padding-top: calc(56px + env(safe-area-inset-top)); }
 .brand { font-weight: 700; text-decoration: none; color: var(--accent); }
 .top nav { display: flex; gap: 16px; }
 .who { margin: 4px 0 0; overflow-wrap: anywhere; }
-.theme-toggle { margin-left: auto; font-size: 13px; white-space: nowrap; }
+.theme-toggle { margin-left: auto; font-size: 13px; white-space: nowrap; visibility: hidden; }
+/* Shown only with scripts (theme.js sets data-js before the first paint); its space is always reserved. */
+:root[data-js] .theme-toggle { visibility: visible; }
+/* One label per theme; data-theme is set by theme.js before the first paint, so the right one shows at once. */
+.theme-toggle span { display: none; }
+:root:not([data-theme]) .theme-toggle [data-for="auto"],
+:root[data-theme="light"] .theme-toggle [data-for="light"],
+:root[data-theme="dark"] .theme-toggle [data-for="dark"] { display: inline; }
 .top nav a, .side a, .filters a { text-decoration: none; color: var(--muted); }
 .top nav a.on, .filters a.on { color: var(--fg); font-weight: 600; }
 .wrap { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; max-width: 1100px; margin: 0 auto;
@@ -46,7 +53,8 @@ h1 { font-size: 20px; margin: 0; }
 .item { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .head { display: flex; align-items: flex-start; gap: 12px; }
 .head > div { flex: 1; min-width: 0; }
-.thumb { flex: none; width: auto; height: auto; max-height: 88px; max-width: min(160px, 40%); border-radius: 6px; }
+/* Fixed box (image cropped to fill it): the layout is final before any image has loaded. */
+.thumb { flex: none; width: 112px; height: 84px; object-fit: cover; border-radius: 6px; }
 .item h2 { font-size: 16px; margin: 0 0 2px; }
 .item h2 a { text-decoration: none; }
 .item h2 a:hover { text-decoration: underline; }
@@ -112,9 +120,20 @@ table.feeds tr.disabled { opacity: .55; }
   .wrap { grid-template-columns: 1fr; }
   .side { position: static; flex-direction: row; flex-wrap: wrap; }
   .version { display: none; }
+  .thumb { width: 88px; height: 66px; }
   .item .meta .topic, .item .meta .author { display: none; }
   .add input[type=url] { min-width: 0; width: 100%; }
   table.feeds thead { display: none; }
   table.feeds td { display: block; border: 0; padding: 4px 0; }
   table.feeds tr { display: block; border-bottom: 1px solid var(--line); padding: 8px 0; }
+}
+
+/* Page changes cross-fade instead of cutting (cross-document view transitions; older browsers just cut).
+   Header and sidebar are their own groups, so they stay put while the content fades. */
+@view-transition { navigation: auto; }
+.top { view-transition-name: top; }
+.side { view-transition-name: side; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 150ms; }
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
 }

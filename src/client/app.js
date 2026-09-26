@@ -42,25 +42,19 @@ const store = createStore();
 setUpArticles({ document, window, location, store, post });
 setUpAutoRefresh({ document, window, navigator, location });
 
-// Theme button: Auto (system setting) → Light → Dark. /theme.js applies the choice before first paint.
-const THEMES = { '': '◐ Auto', light: '☀ Light', dark: '☾ Dark' };
+// Theme button: Auto (system setting) → Light → Dark. /theme.js applies the choice before first paint;
+// the label shown is chosen by CSS from data-theme (all three are in the HTML), so nothing is written here.
+/** @type {Record<string, string>} */
 const NEXT = { '': 'light', light: 'dark', dark: '' };
-const toggle = /** @type {HTMLButtonElement|null} */ (document.querySelector('.theme-toggle'));
+const toggle = document.querySelector('.theme-toggle');
 if (toggle) {
-  const current = () => /** @type {keyof THEMES} */ (document.documentElement.dataset.theme || '');
-  const show = () => {
-    toggle.textContent = THEMES[current()];
-  };
-  show();
-  toggle.hidden = false;
   toggle.addEventListener('click', () => {
-    const next = NEXT[current()];
+    const next = NEXT[document.documentElement.dataset.theme || ''];
     /** @type {any} */ (window).rssSetTheme(next);
     try {
       if (next) localStorage.setItem('theme', next);
       else localStorage.removeItem('theme');
     } catch {}
-    show();
   });
 }
 

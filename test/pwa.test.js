@@ -122,10 +122,23 @@ test('rssSetTheme: forced theme sets both theme-color tags, auto restores them',
   new Function('window', 'document', 'localStorage', THEME_JS)(window, document, localStorage);
 
   assert.equal(root.dataset.theme, 'dark', 'saved theme applied on load');
+  assert.equal(root.dataset.js, '1', 'marks the page as scripted before the first paint');
   assert.deepEqual(metas.map((m) => m.content), ['#161412', '#161412']);
   window.rssSetTheme('light');
   assert.deepEqual(metas.map((m) => m.content), ['#fafaf9', '#fafaf9']);
   window.rssSetTheme('');
   assert.equal(root.dataset.theme, undefined);
   assert.deepEqual(metas.map((m) => m.content), ['#fafaf9', '#161412'], 'auto: each tag back to its own scheme');
+});
+
+test('no layout shift on load: theme label from CSS, fixed thumbnail box, cross-fade between pages', () => {
+  const page = layout({ title: 't', active: 'home', topics: [], totalUnread: 0, version: 'v', assetVersion: 'v1', body: '' }).toString();
+  const button = page.match(/<button type="button" class="theme-toggle">(.*?)<\/button>/)?.[1] ?? '';
+  assert.deepEqual([...button.matchAll(/data-for="(\w+)"/g)].map((m) => m[1]), ['auto', 'light', 'dark'], 'all labels rendered');
+  assert.doesNotMatch(page, /class="theme-toggle"[^>]*hidden/, 'not hidden: CSS decides from the first paint');
+  for (const t of ['light', 'dark']) assert.match(CSS, new RegExp(`:root\\[data-theme="${t}"\\] \\.theme-toggle \\[data-for="${t}"\\]`));
+  assert.match(CSS, /:root\[data-js\] \.theme-toggle \{ visibility: visible; \}/);
+  assert.match(CSS, /\.thumb \{[^}]*width: 112px; height: 84px; object-fit: cover;/);
+  assert.match(CSS, /@view-transition \{ navigation: auto; \}/);
+  assert.match(CSS, /prefers-reduced-motion: reduce\) \{\s*@view-transition \{ navigation: none; \}/);
 });

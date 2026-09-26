@@ -70,7 +70,7 @@ export function layout(p) {
     <a href="/feeds" class="${p.active === 'feeds' ? 'on' : ''}">Feeds</a>
     <a href="/topics" class="${p.active === 'topics' ? 'on' : ''}">Topics</a>
   </nav>
-  <button type="button" class="theme-toggle" hidden>Theme</button>
+  <button type="button" class="theme-toggle"><span data-for="auto">◐ Auto</span><span data-for="light">☀ Light</span><span data-for="dark">☾ Dark</span></button>
 </header>
 <div class="wrap">
   <aside class="side">
