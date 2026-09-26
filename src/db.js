@@ -8,6 +8,7 @@
 // row owned by the user).
 
 import { MUTE_SCAN_LIMIT } from './mute.js';
+import { todayPauseBit } from './pause.js';
 
 export const PAGE_SIZE = 50;
 export const RETENTION_MS = 60 * 24 * 60 * 60 * 1000;
@@ -46,7 +47,8 @@ export async function findOrCreateUser(db, email) {
 // Articles
 
 /**
- * @typedef {{ topic?: number|null, feed?: number|null, filter: 'unread'|'all'|'starred', page: number }} ArticleQuery
+ * `pauseBit`: today's pause_days bit (src/pause.js); in the "All" view, topics paused today are left out.
+ * @typedef {{ topic?: number|null, feed?: number|null, filter: 'unread'|'all'|'starred', page: number, pauseBit?: number }} ArticleQuery
  */
 
 /** @param {number} userId @param {ArticleQuery} q */
@@ -61,6 +63,10 @@ function articleWhere(userId, q) {
   if (q.feed) {
     where.push('a.feed_id = ?');
     params.push(q.feed);
+  }
+  if (!q.topic && !q.feed && q.pauseBit) {
+    where.push('(f.topic_id IS NULL OR f.topic_id NOT IN (SELECT id FROM topics WHERE user_id = ? AND (pause_days & ?) != 0))');
+    params.push(userId, q.pauseBit);
   }
   if (q.filter === 'unread') where.push('a.is_read = 0');
   if (q.filter === 'starred') where.push('a.is_starred = 1');
@@ -135,12 +141,16 @@ export async function getArticleImageUrl(db, userId, id) {
 
 // Topics
 
-/** Topics with unread counts, plus the overall unread total. @param {any} db @param {number} userId */
-export async function topicsWithCounts(db, userId) {
+/**
+ * Topics with unread counts, plus the unread total of the "All" view: without the topics paused today
+ * (`paused`). Each article belongs to at most one topic, so subtracting their counts is exact.
+ * @param {any} db @param {number} userId @param {number} [pauseBit] today's pause_days bit (src/pause.js)
+ */
+export async function topicsWithCounts(db, userId, pauseBit = todayPauseBit()) {
   const [topics, total] = await db.batch([
     db
       .prepare(
-        `SELECT t.id, t.name, t.weight, COUNT(a.id) AS unread,
+        `SELECT t.id, t.name, t.weight, t.pause_days, COUNT(a.id) AS unread,
                 (SELECT COUNT(*) FROM feeds WHERE topic_id = t.id AND user_id = t.user_id) AS feed_count
            FROM topics t
            LEFT JOIN feeds f ON f.topic_id = t.id AND f.user_id = t.user_id
@@ -157,7 +167,9 @@ export async function topicsWithCounts(db, userId) {
       )
       .bind(userId),
   ]);
-  return { topics: topics.results, totalUnread: total.results[0]?.unread ?? 0 };
+  const paused = topics.results.filter((/** @type {any} */ t) => (t.pause_days & pauseBit) !== 0);
+  const pausedUnread = paused.reduce((/** @type {number} */ n, /** @type {any} */ t) => n + t.unread, 0);
+  return { topics: topics.results, totalUnread: (total.results[0]?.unread ?? 0) - pausedUnread, paused };
 }
 
 /**
@@ -179,9 +191,9 @@ export function insertTopic(db, userId, name) {
   return db.prepare('INSERT INTO topics (user_id, name) VALUES (?, ?)').bind(userId, name).run();
 }
 
-/** @param {any} db @param {number} userId @param {number} id @param {string} name */
-export function renameTopic(db, userId, id, name) {
-  return db.prepare('UPDATE topics SET name = ? WHERE id = ? AND user_id = ?').bind(name, id, userId).run();
+/** @param {any} db @param {number} userId @param {number} id @param {{ name: string, pauseDays: number }} t */
+export function updateTopic(db, userId, id, { name, pauseDays }) {
+  return db.prepare('UPDATE topics SET name = ?, pause_days = ? WHERE id = ? AND user_id = ?').bind(name, pauseDays, id, userId).run();
 }
 
 /** @param {any} db @param {number} userId @param {number} id */

@@ -7,6 +7,7 @@ import * as db from './db.js';
 import { addFeed, refreshFeed, runScheduled } from './fetcher.js';
 import { SafeHtml } from './html.js';
 import { articleImage } from './images.js';
+import { pauseDaysFromForm, todayPauseBit } from './pause.js';
 import { MAX_RULES_PER_USER, MUTE_SCAN_LIMIT, cleanPattern, isMuteField, matchRule, normalize, urlPattern } from './mute.js';
 import appleTouchIcon from './icons/apple-touch-icon.png';
 import icon192 from './icons/icon-192.png';
@@ -144,8 +145,9 @@ async function renderTimeline(env, user, url) {
     feed: toId(p.get('feed')),
     filter: filterParam === 'all' || filterParam === 'starred' ? filterParam : 'unread',
     page: Math.min(toId(p.get('page')) ?? 0, 1000),
+    pauseBit: todayPauseBit(),
   };
-  const [{ articles, hasMore }, nav] = await Promise.all([db.listArticles(env.DB, user.id, q), db.topicsWithCounts(env.DB, user.id)]);
+  const [{ articles, hasMore }, nav] = await Promise.all([db.listArticles(env.DB, user.id, q), db.topicsWithCounts(env.DB, user.id, q.pauseBit)]);
 
   let heading = 'All articles';
   if (q.feed) heading = (await db.getFeed(env.DB, user.id, q.feed))?.title || 'Feed';
@@ -160,7 +162,7 @@ async function renderTimeline(env, user, url) {
       version: versionLabel(env),
       assetVersion: assetVersion(env),
       currentTopic: q.topic,
-      body: views.timeline({ articles, hasMore, q, heading }),
+      body: views.timeline({ articles, hasMore, q, heading, paused: q.topic || q.feed ? [] : nav.paused.map((/** @type {any} */ t) => t.name) }),
     })
   );
 }
@@ -307,7 +309,8 @@ async function handlePost(request, env, user, url) {
     return redirect(backTo(request, url));
   }
   if (path === '/articles/mark-all-read') {
-    await db.markAllRead(env.DB, user.id, { topic: toId(form.get('topic')), feed: toId(form.get('feed')), filter: 'unread', page: 0 });
+    // Same pause as the "All" view: paused topics' articles aren't shown there, so they aren't marked read.
+    await db.markAllRead(env.DB, user.id, { topic: toId(form.get('topic')), feed: toId(form.get('feed')), filter: 'unread', page: 0, pauseBit: todayPauseBit() });
     return redirect(backTo(request, url));
   }
 
@@ -367,7 +370,7 @@ async function handlePost(request, env, user, url) {
     const name = cleanName(form.get('name'));
     if (!name) return renderTopics(env, user, 'Name is required.');
     try {
-      await db.renameTopic(env.DB, user.id, id, name);
+      await db.updateTopic(env.DB, user.id, id, { name, pauseDays: pauseDaysFromForm(form.getAll('pause')) });
     } catch {
       return renderTopics(env, user, `Topic "${name}" already exists.`);
     }

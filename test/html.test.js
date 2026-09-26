@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { html, raw, escapeHtml, safeUrl } from '../src/html.js';
 import { parseFeed } from '../src/parser.js';
-import { articleItem, feedBadge, feedsPage, layout, muteForm } from '../src/views.js';
+import { articleItem, feedBadge, feedsPage, layout, muteForm, timeline, topicsPage } from '../src/views.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
@@ -140,4 +140,19 @@ test('mute form escapes article data and the pattern', () => {
   assert.match(out, /name="pattern" value="&quot;&gt;&lt;script&gt;/);
   assert.match(out, /href="\/mute\/new\?article=3&amp;field=url"/);
   assert.match(out, /value="feed" checked/);
+});
+
+test('topics page: pause checkboxes reflect pause_days; names escaped', () => {
+  const evil = '"><script>alert(1)</script>';
+  const out = topicsPage({ topics: [{ id: 2, name: evil, feed_count: 1, pause_days: 0b1110000 }] }).toString();
+  assert.doesNotMatch(out, /<script>alert/);
+  const checked = [...out.matchAll(/name="pause" value="(\d)" ([a-z]*)>/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(checked, [['0', ''], ['1', ''], ['2', ''], ['3', ''], ['4', 'checked'], ['5', 'checked'], ['6', 'checked']]);
+});
+
+test('timeline: note about topics paused today, escaped; none without pauses', () => {
+  const q = { filter: 'unread', page: 0 };
+  const out = timeline({ articles: [], hasMore: false, q, heading: 'All articles', paused: ['<b>Security</b>'] }).toString();
+  assert.match(out, /Paused today: &lt;b&gt;Security&lt;\/b&gt; – still in its topic\./);
+  assert.doesNotMatch(timeline({ articles: [], hasMore: false, q, heading: 'All articles', paused: [] }).toString(), /Paused today/);
 });

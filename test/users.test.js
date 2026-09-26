@@ -105,7 +105,7 @@ test('isolation: foreign article, feed, topic and image ids change and reveal no
   assert.equal(await db.ownsTopic(DB, a, topicA), true);
 
   await db.updateFeed(DB, a, feedB.id, { topicId: null, enabled: false, title: 'hijacked' });
-  await db.renameTopic(DB, a, topicB, 'hijacked');
+  await db.updateTopic(DB, a, topicB, { name: 'hijacked', pauseDays: 127 });
   await db.markAllRead(DB, a, { feed: feedB.id, filter: 'unread', page: 0 });
   await db.markAllRead(DB, a, { filter: 'unread', page: 0 });
   await db.deleteTopic(DB, a, topicB);
@@ -113,7 +113,7 @@ test('isolation: foreign article, feed, topic and image ids change and reveal no
 
   const feedsB = await db.listFeeds(DB, b);
   assert.deepEqual(feedsB.map((f) => [f.title, f.enabled, f.topic_id]), [['B news', 1, topicB]]);
-  assert.ok((await topicsOf(DB, b)).some((t) => t.id === topicB && t.name === 'News'));
+  assert.ok((await topicsOf(DB, b)).some((t) => t.id === topicB && t.name === 'News' && t.pause_days === 0), "A can't rename or pause B's topic");
   assert.deepEqual((await articlesOf(b)).map((x) => [x.is_read, x.is_starred]), [[0, 0], [0, 0], [0, 0]]);
   assert.equal((await articlesOf(a)).every((x) => x.is_read === 1), true, 'A marked only its own');
 });
@@ -262,6 +262,35 @@ test('unread counts for the client: total and per topic, per user', async () => 
   assert.equal((await db.unreadCounts(DB, a)).total, 1);
   assert.equal((await db.unreadCounts(DB, b)).total, 3, "A's read doesn't change B's counts");
   assert.equal((await db.unreadCounts(DB, b)).topics[topicB], 3);
+});
+
+test('pause: a topic paused today is left out of All (list, count, mark-all-read), not out of its own view', async () => {
+  const { DB, a, b, feedA } = await setup();
+  const security = (await topicsOf(DB, a)).find((t) => t.name === 'Security').id;
+  // A second feed in another topic, so All still has something.
+  const tech = (await topicsOf(DB, a)).find((t) => t.name === 'Tech').id;
+  const feedT = await db.insertFeed(DB, a, { url: 'https://tech.x.test/feed', title: 'T', siteUrl: '', topicId: tech });
+  await db.insertArticles(DB, feedT.id, [{ guidHash: 't1', url: '', title: 'Tech 1', snippet: '', author: '', publishedAt: 5, imageUrl: '' }]);
+  await db.updateFeed(DB, a, feedA.id, { topicId: security, enabled: true, title: 'A news' });
+  const FRIDAY = 1 << 4;
+  await db.updateTopic(DB, a, security, { name: 'Security', pauseDays: FRIDAY | (1 << 5) });
+
+  const all = async (pauseBit, extra = {}) => (await db.listArticles(DB, a, { filter: 'unread', page: 0, pauseBit, ...extra })).articles.map((x) => x.title).sort();
+  assert.deepEqual(await all(FRIDAY), ['Tech 1'], 'Friday: Security left out of All');
+  assert.deepEqual(await all(1 << 0), ['Item 1', 'Item 2', 'Tech 1'], 'Monday: everything');
+  assert.deepEqual(await all(FRIDAY, { topic: security }), ['Item 1', 'Item 2'], 'the topic itself still shows them');
+  assert.deepEqual(await all(FRIDAY, { feed: feedA.id }), ['Item 1', 'Item 2'], 'and so does the feed');
+
+  const friday = await db.topicsWithCounts(DB, a, FRIDAY);
+  assert.equal(friday.totalUnread, 1, 'All count without the paused topic');
+  assert.deepEqual(friday.paused.map((t) => t.name), ['Security']);
+  assert.equal(friday.topics.find((t) => t.id === security).unread, 2, 'the topic keeps its own count');
+  assert.equal((await db.topicsWithCounts(DB, a, 1 << 0)).totalUnread, 3);
+
+  await db.markAllRead(DB, a, { filter: 'unread', page: 0, pauseBit: FRIDAY });
+  assert.deepEqual(await all(1 << 0), ['Item 1', 'Item 2'], 'mark all read on Friday left the paused articles unread');
+
+  assert.equal((await db.topicsWithCounts(DB, b, FRIDAY)).totalUnread, 3, "A's pause doesn't affect B");
 });
 
 test('isolation: a feed can only get its own user\'s topic', async () => {

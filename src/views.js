@@ -10,6 +10,7 @@
 
 import { html, safeUrl } from './html.js';
 import { MUTE_SCAN_LIMIT } from './mute.js';
+import { WEEKDAYS, isPausedOn } from './pause.js';
 
 /** @param {number|null|undefined} ms */
 export function timeAgo(ms, now = Date.now()) {
@@ -138,7 +139,8 @@ export function articleItem(a) {
 }
 
 /**
- * @param {{ articles: any[], hasMore: boolean, q: import('./db.js').ArticleQuery, heading: string }} p
+ * @param {{ articles: any[], hasMore: boolean, q: import('./db.js').ArticleQuery, heading: string, paused?: string[] }} p
+ *   `paused`: names of the topics left out of this "All" view today
  */
 export function timeline(p) {
   const { q } = p;
@@ -156,6 +158,7 @@ export function timeline(p) {
     <button type="submit">Mark all read</button>
   </form>
 </div>
+${p.paused?.length ? html`<p class="sub paused">Paused today: ${p.paused.join(', ')} – still in ${p.paused.length === 1 ? 'its topic' : 'their topics'}.</p>` : ''}
 ${p.articles.length ? p.articles.map(articleItem) : html`<p class="empty">Nothing here. <a href="/feeds">Add some feeds</a> or check other filters.</p>`}
 <nav class="pager">
   ${q.page > 0 ? html`<a href="${qs({ ...base, filter: q.filter === 'unread' ? '' : q.filter, page: q.page - 1 })}">← Newer</a>` : ''}
@@ -290,15 +293,21 @@ ${p.error ? html`<p class="flash error">${p.error}</p>` : ''}
   <label>New topic <input type="text" name="name" required maxlength="50"></label>
   <button type="submit">Add topic</button>
 </form>
+<p class="sub">Paused days: the topic is left out of “All” on those days (Europe/Berlin). Its own page still shows everything.</p>
 <table class="feeds">
-  <thead><tr><th>Name</th><th>Feeds</th><th></th></tr></thead>
+  <thead><tr><th>Name / paused days</th><th>Feeds</th><th></th></tr></thead>
   <tbody>
   ${p.topics.map(
     (t) => html`<tr>
     <td>
       <form method="post" action="/topics/${t.id}" class="inline">
         <input type="text" name="name" value="${t.name}" required maxlength="50" aria-label="Topic name">
-        <button type="submit">Rename</button>
+        <button type="submit">Save</button>
+        <span class="days">
+          ${WEEKDAYS.map(
+            (d, i) => html`<label class="check"><input type="checkbox" name="pause" value="${i}" ${isPausedOn(t.pause_days ?? 0, i) ? html`checked` : ''}>${d}</label>`
+          )}
+        </span>
       </form>
     </td>
     <td>${t.feed_count}</td>
