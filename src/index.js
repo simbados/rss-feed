@@ -2,6 +2,7 @@
 // Worker entry: HTTP router + cron handler.
 
 import { authenticate } from './auth.js';
+import { normalizeEmail, resolveUser } from './users.js';
 import * as db from './db.js';
 import { addFeed, refreshFeed, runScheduled } from './fetcher.js';
 import { SafeHtml } from './html.js';
@@ -10,7 +11,7 @@ import appleTouchIcon from './icons/apple-touch-icon.png';
 import icon192 from './icons/icon-192.png';
 import icon512Maskable from './icons/icon-512-maskable.png';
 import icon512 from './icons/icon-512.png';
-import { parseSubscription, sendToAll } from './push.js';
+import { parseSubscription, sendToUser } from './push.js';
 import { CSS, ICON_SVG, JS, MANIFEST, SW_JS, THEME_JS } from './static.js';
 import * as views from './views.js';
 
@@ -124,8 +125,10 @@ function backTo(request, url, fallback = '/') {
   }
 }
 
-/** @param {any} env @param {URL} url */
-async function renderTimeline(env, url) {
+/** @typedef {{ id: number, email: string }} User the logged-in user (see handle()) */
+
+/** @param {any} env @param {User} user @param {URL} url */
+async function renderTimeline(env, user, url) {
   const p = url.searchParams;
   const filterParam = p.get('filter');
   /** @type {import('./db.js').ArticleQuery} */
@@ -135,10 +138,10 @@ async function renderTimeline(env, url) {
     filter: filterParam === 'all' || filterParam === 'starred' ? filterParam : 'unread',
     page: Math.min(toId(p.get('page')) ?? 0, 1000),
   };
-  const [{ articles, hasMore }, nav] = await Promise.all([db.listArticles(env.DB, q), db.topicsWithCounts(env.DB)]);
+  const [{ articles, hasMore }, nav] = await Promise.all([db.listArticles(env.DB, user.id, q), db.topicsWithCounts(env.DB, user.id)]);
 
   let heading = 'All articles';
-  if (q.feed) heading = (await db.getFeed(env.DB, q.feed))?.title || 'Feed';
+  if (q.feed) heading = (await db.getFeed(env.DB, user.id, q.feed))?.title || 'Feed';
   else if (q.topic) heading = nav.topics.find((/** @type {any} */ t) => t.id === q.topic)?.name || 'Topic';
 
   return htmlResponse(
@@ -149,6 +152,7 @@ async function renderTimeline(env, url) {
       totalUnread: nav.totalUnread,
       version: versionLabel(env),
       assetVersion: assetVersion(env),
+      userEmail: user.email,
       currentTopic: q.topic,
       body: views.timeline({ articles, hasMore, q, heading }),
     })
@@ -157,11 +161,16 @@ async function renderTimeline(env, url) {
 
 /**
  * @param {any} env
+ * @param {User} user
  * @param {{ error?: string, message?: string, formUrl?: string }} [extra]
  * @param {number} [status]
  */
-async function renderFeeds(env, extra = {}, status = 200) {
-  const [feeds, nav, subs] = await Promise.all([db.listFeeds(env.DB), db.topicsWithCounts(env.DB), db.listDevices(env.DB)]);
+async function renderFeeds(env, user, extra = {}, status = 200) {
+  const [feeds, nav, subs] = await Promise.all([
+    db.listFeeds(env.DB, user.id),
+    db.topicsWithCounts(env.DB, user.id),
+    db.listDevices(env.DB, user.id),
+  ]);
   const devices = subs.map((s) => ({ id: s.id, host: endpointHost(s.endpoint), createdAt: s.created_at, lastError: s.last_error }));
   return htmlResponse(
     views.layout({
@@ -171,15 +180,16 @@ async function renderFeeds(env, extra = {}, status = 200) {
       totalUnread: nav.totalUnread,
       version: versionLabel(env),
       assetVersion: assetVersion(env),
+      userEmail: user.email,
       body: views.feedsPage({ feeds, topics: nav.topics, pushKey: env.VAPID_PUBLIC_KEY ?? '', devices, ...extra }),
     }),
     status
   );
 }
 
-/** @param {any} env @param {string} [error] */
-async function renderTopics(env, error) {
-  const nav = await db.topicsWithCounts(env.DB);
+/** @param {any} env @param {User} user @param {string} [error] */
+async function renderTopics(env, user, error) {
+  const nav = await db.topicsWithCounts(env.DB, user.id);
   return htmlResponse(
     views.layout({
       title: 'Topics',
@@ -188,6 +198,7 @@ async function renderTopics(env, error) {
       totalUnread: nav.totalUnread,
       version: versionLabel(env),
       assetVersion: assetVersion(env),
+      userEmail: user.email,
       body: views.topicsPage({ topics: nav.topics, error }),
     }),
     error ? 400 : 200
@@ -199,15 +210,24 @@ function cleanName(v) {
   return String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 50);
 }
 
-/** @param {Request} request @param {any} env @param {URL} url */
-async function handlePost(request, env, url) {
+/**
+ * Topic id from a form, only if it belongs to the user (else "no topic").
+ * @param {any} env @param {User} user @param {unknown} value
+ */
+async function ownTopicId(env, user, value) {
+  const id = toId(value);
+  return id && (await db.ownsTopic(env.DB, user.id, id)) ? id : null;
+}
+
+/** @param {Request} request @param {any} env @param {User} user @param {URL} url */
+async function handlePost(request, env, user, url) {
   const path = url.pathname;
   const form = request.headers.get('content-type')?.includes('form') ? await request.formData() : new FormData();
   let m;
 
   // Articles
   if ((m = path.match(/^\/articles\/(\d+)\/([a-z]+)$/)) && db.isArticleAction(m[2])) {
-    const state = await db.updateArticle(env.DB, Number(m[1]), m[2]);
+    const state = await db.updateArticle(env.DB, user.id, Number(m[1]), m[2]);
     if (!state) return errorResponse(404, 'Article not found.');
     if (request.headers.get('x-requested-with') === 'fetch') {
       return respond(JSON.stringify(state), 200, { 'content-type': 'application/json' });
@@ -215,33 +235,33 @@ async function handlePost(request, env, url) {
     return redirect(backTo(request, url));
   }
   if (path === '/articles/mark-all-read') {
-    await db.markAllRead(env.DB, { topic: toId(form.get('topic')), feed: toId(form.get('feed')), filter: 'unread', page: 0 });
+    await db.markAllRead(env.DB, user.id, { topic: toId(form.get('topic')), feed: toId(form.get('feed')), filter: 'unread', page: 0 });
     return redirect(backTo(request, url));
   }
 
   // Push notifications (JSON bodies, sent by /app.js)
-  if (path.startsWith('/push/')) return handlePush(request, env, path);
+  if (path.startsWith('/push/')) return handlePush(request, env, user, path);
 
   // Feeds
   if (path === '/feeds') {
     const inputUrl = String(form.get('url') ?? '');
-    const result = await addFeed(env, inputUrl, toId(form.get('topic')));
-    if (!result.ok) return renderFeeds(env, { error: result.error, formUrl: inputUrl }, 400);
-    return renderFeeds(env, { message: `Added "${result.feed.title}" with ${result.added} articles.` });
+    const result = await addFeed(env, user.id, inputUrl, await ownTopicId(env, user, form.get('topic')));
+    if (!result.ok) return renderFeeds(env, user, { error: result.error, formUrl: inputUrl }, 400);
+    return renderFeeds(env, user, { message: `Added "${result.feed.title}" with ${result.added} articles.` });
   }
   if ((m = path.match(/^\/feeds\/(\d+)(?:\/(refresh|delete))?$/))) {
-    const feed = await db.getFeed(env.DB, Number(m[1]));
+    const feed = await db.getFeed(env.DB, user.id, Number(m[1]));
     if (!feed) return errorResponse(404, 'Feed not found.');
     if (m[2] === 'delete') {
-      await db.deleteFeed(env.DB, feed.id);
+      await db.deleteFeed(env.DB, user.id, feed.id);
       return redirect('/feeds');
     }
     if (m[2] === 'refresh') {
       const r = await refreshFeed(env, feed);
-      return renderFeeds(env, r.error ? { error: `Refresh failed: ${r.error}` } : { message: `${r.added} new articles.` });
+      return renderFeeds(env, user, r.error ? { error: `Refresh failed: ${r.error}` } : { message: `${r.added} new articles.` });
     }
-    await db.updateFeed(env.DB, feed.id, {
-      topicId: toId(form.get('topic')),
+    await db.updateFeed(env.DB, user.id, feed.id, {
+      topicId: await ownTopicId(env, user, form.get('topic')),
       enabled: form.get('enabled') === '1',
       title: String(form.get('title') ?? '').trim().slice(0, 200) || feed.title,
     });
@@ -251,26 +271,26 @@ async function handlePost(request, env, url) {
   // Topics
   if (path === '/topics') {
     const name = cleanName(form.get('name'));
-    if (!name) return renderTopics(env, 'Name is required.');
+    if (!name) return renderTopics(env, user, 'Name is required.');
     try {
-      await db.insertTopic(env.DB, name);
+      await db.insertTopic(env.DB, user.id, name);
     } catch {
-      return renderTopics(env, `Topic "${name}" already exists.`);
+      return renderTopics(env, user, `Topic "${name}" already exists.`);
     }
     return redirect('/topics');
   }
   if ((m = path.match(/^\/topics\/(\d+)(\/delete)?$/))) {
     const id = Number(m[1]);
     if (m[2]) {
-      await db.deleteTopic(env.DB, id);
+      await db.deleteTopic(env.DB, user.id, id);
       return redirect('/topics');
     }
     const name = cleanName(form.get('name'));
-    if (!name) return renderTopics(env, 'Name is required.');
+    if (!name) return renderTopics(env, user, 'Name is required.');
     try {
-      await db.renameTopic(env.DB, id, name);
+      await db.renameTopic(env.DB, user.id, id, name);
     } catch {
-      return renderTopics(env, `Topic "${name}" already exists.`);
+      return renderTopics(env, user, `Topic "${name}" already exists.`);
     }
     return redirect('/topics');
   }
@@ -283,13 +303,13 @@ function json(body, status = 200) {
   return respond(JSON.stringify(body), status, { 'content-type': 'application/json' });
 }
 
-/** @param {Request} request @param {any} env @param {string} path */
-async function handlePush(request, env, path) {
+/** @param {Request} request @param {any} env @param {User} user @param {string} path */
+async function handlePush(request, env, user, path) {
   // Form post from the device list on /feeds.
   const remove = path.match(/^\/push\/devices\/(\d+)\/delete$/);
   if (remove) {
-    await db.deleteSubscriptionById(env.DB, Number(remove[1]));
-    console.warn(`push: device ${remove[1]} removed`);
+    await db.deleteSubscriptionById(env.DB, user.id, Number(remove[1]));
+    console.warn(`push: user ${user.id} removed device ${remove[1]}`);
     return redirect('/feeds');
   }
 
@@ -300,20 +320,20 @@ async function handlePush(request, env, path) {
       console.warn(`push: invalid subscription rejected (endpoint host: ${endpointHost(body?.endpoint)})`);
       return json({ ok: false, error: 'invalid subscription' }, 400);
     }
-    await db.upsertSubscription(env.DB, sub);
-    console.warn(`push: device subscribed (${endpointHost(sub.endpoint)})`);
+    await db.upsertSubscription(env.DB, user.id, sub);
+    console.warn(`push: user ${user.id} subscribed a device (${endpointHost(sub.endpoint)})`);
     return json({ ok: true });
   }
   if (path === '/push/unsubscribe') {
     if (typeof body?.endpoint === 'string') {
-      await db.deleteSubscription(env.DB, body.endpoint);
-      console.warn(`push: device unsubscribed (${endpointHost(body.endpoint)})`);
+      await db.deleteSubscription(env.DB, user.id, body.endpoint);
+      console.warn(`push: user ${user.id} unsubscribed a device (${endpointHost(body.endpoint)})`);
     }
     return json({ ok: true });
   }
   if (path === '/push/test') {
-    const r = await sendToAll(env, { title: 'RSS', body: 'Test notification – it works.', url: '/', tag: 'test' });
-    console.log(`push: test sent ${r.sent}, failed ${r.failed}${r.error ? ` (${r.error})` : ''}`);
+    const r = await sendToUser(env, user.id, { title: 'RSS', body: 'Test notification – it works.', url: '/', tag: 'test' });
+    console.log(`push: test for user ${user.id} sent ${r.sent}, failed ${r.failed}${r.error ? ` (${r.error})` : ''}`);
     return json(r);
   }
   return json({ ok: false, error: 'not found' }, 404);
@@ -329,11 +349,11 @@ function endpointHost(endpoint) {
 }
 
 /**
- * @param {Request} request @param {any} env @param {number} id
+ * @param {Request} request @param {any} env @param {User} user @param {number} id
  * @param {{ waitUntil(p: Promise<unknown>): void }} ctx
  */
-async function serveImage(request, env, ctx, id) {
-  const img = await articleImage(request, env, ctx, id);
+async function serveImage(request, env, user, ctx, id) {
+  const img = await articleImage(request, env, ctx, user.id, id);
   // Missing or broken images are cached too, so the browser does not retry them on every page.
   if (!img) return respond(null, 404, { 'cache-control': 'private, max-age=86400' });
   return respond(img.body, 200, { 'content-type': img.type, 'cache-control': `private, max-age=${img.maxAge}` });
@@ -351,19 +371,27 @@ async function handle(request, env, ctx) {
     console.warn(`auth rejected: ${auth.reason}`);
     return respond('Unauthorized', 401, { 'content-type': 'text/plain; charset=utf-8' });
   }
+  // Every handler below only sees this user's data (see src/db.js).
+  const userId = await resolveUser(env, auth.email);
+  if (!userId) {
+    console.warn('auth rejected: token without a usable email');
+    return respond('Unauthorized', 401, { 'content-type': 'text/plain; charset=utf-8' });
+  }
+  /** @type {User} */
+  const user = { id: userId, email: normalizeEmail(auth.email) };
 
   if (request.method === 'GET' || request.method === 'HEAD') {
     const img = url.pathname.match(/^\/img\/(\d+)$/);
-    if (img) return serveImage(request, env, ctx, Number(img[1]));
+    if (img) return serveImage(request, env, user, ctx, Number(img[1]));
     const icon = ICONS.get(url.pathname);
     if (icon) return respond(icon, 200, { 'content-type': 'image/png', 'cache-control': 'private, max-age=86400' });
     switch (url.pathname) {
       case '/':
-        return renderTimeline(env, url);
+        return renderTimeline(env, user, url);
       case '/feeds':
-        return renderFeeds(env);
+        return renderFeeds(env, user);
       case '/topics':
-        return renderTopics(env);
+        return renderTopics(env, user);
       case '/app.css':
         return respond(CSS, 200, { 'content-type': 'text/css; charset=utf-8', 'cache-control': assetCache(url) });
       case '/app.js':
@@ -392,7 +420,7 @@ async function handle(request, env, ctx) {
       );
       return errorResponse(403, 'Cross-origin request blocked.');
     }
-    return handlePost(request, env, url);
+    return handlePost(request, env, user, url);
   }
 
   return respond('Method not allowed', 405, { allow: 'GET, HEAD, POST' });

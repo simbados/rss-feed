@@ -162,14 +162,15 @@ export async function runScheduled(env) {
 /**
  * Add a feed by URL. Accepts a feed URL or a web page that advertises one.
  * @param {any} env
+ * @param {number} userId
  * @param {string} inputUrl
- * @param {number|null} topicId
+ * @param {number|null} topicId a topic of this user (checked by the caller)
  * @returns {Promise<{ ok: true, feed: any, added: number } | { ok: false, error: string }>}
  */
-export async function addFeed(env, inputUrl, topicId) {
+export async function addFeed(env, userId, inputUrl, topicId) {
   let url = normalizeHttpUrl(inputUrl);
   if (!url) return { ok: false, error: 'Please enter a valid http(s) URL.' };
-  if (await db.getFeedByUrl(env.DB, url)) return { ok: false, error: 'This feed is already subscribed.' };
+  if (await db.getFeedByUrl(env.DB, userId, url)) return { ok: false, error: 'This feed is already subscribed.' };
 
   let r;
   let parsed;
@@ -182,7 +183,7 @@ export async function addFeed(env, inputUrl, topicId) {
       const candidates = discoverFeeds(r.body, r.res.url || url);
       if (!candidates.length) return { ok: false, error: 'No RSS/Atom feed found at this URL.' };
       url = candidates[0];
-      if (await db.getFeedByUrl(env.DB, url)) return { ok: false, error: `Already subscribed to ${url}.` };
+      if (await db.getFeedByUrl(env.DB, userId, url)) return { ok: false, error: `Already subscribed to ${url}.` };
       r = await httpGet(url);
       parsed = parseFeed(r.body, r.res.url || url);
     }
@@ -190,7 +191,7 @@ export async function addFeed(env, inputUrl, topicId) {
     return { ok: false, error: `Could not load feed: ${/** @type {Error} */ (err).message}` };
   }
 
-  const feed = await db.insertFeed(env.DB, {
+  const feed = await db.insertFeed(env.DB, userId, {
     url,
     title: parsed.title || new URL(url).hostname,
     siteUrl: parsed.siteUrl,

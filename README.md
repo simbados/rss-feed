@@ -38,6 +38,14 @@ Requires `wrangler` (the only tool; not a runtime dependency).
 
 The Worker fails closed: without a valid Access JWT every request gets `401`.
 
+## Users
+
+Several people can use one deployment; nobody sees another person's feeds, articles or notifications.
+A user is identified by the email in their Access login, and their (empty) reader is created on first
+login. **To add a person, add their email to the Access policy.** Removing them from the policy blocks
+them; their data stays until deleted: `wrangler d1 execute rss-feed --remote --command
+"DELETE FROM users WHERE email = '…'"` (everything of theirs is deleted with it).
+
 ## Notifications (daily summary)
 
 The installed app (iPhone: Safari → Share → Add to Home Screen) can get one notification per day at
@@ -57,6 +65,7 @@ Apple's push service only forwards it.
 echo 'DEV_NO_AUTH=1' > .dev.vars                     # skip Access locally only
 npm run db:migrate:local                             # wrangler from node_modules
 npm run dev                                           # then: curl localhost:8787/__scheduled
+npm run dev -- --var DEV_EMAIL:b@x.test               # same, as a second local user
 ```
 
 ## Notes

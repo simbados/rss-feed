@@ -1,20 +1,57 @@
 // @ts-check
 // All SQL lives here. `db` is a D1Database binding.
+//
+// Multi-user: every function that serves a request takes `userId` and only sees that user's rows —
+// articles through `feeds.user_id`. IDs from requests are never trusted on their own: a foreign ID
+// simply matches nothing. Only the cron functions (CRON_ONLY below) work across all users.
+// test/security-rules.test.js checks that every other statement filters on `user_id = ?` (or inserts a
+// row owned by the user).
 
 export const PAGE_SIZE = 50;
 export const RETENTION_MS = 60 * 24 * 60 * 60 * 1000;
 /** Unstarred articles kept per feed; bounds what one (hostile) feed can store in D1. */
 export const MAX_ARTICLES_PER_FEED = 3000;
+/** Topics every new user starts with. */
+export const DEFAULT_TOPICS = ['Security', 'News', 'Tech'];
+
+/** Functions that run for all users (cron) and are exempt from the user_id rule. */
+export const CRON_ONLY = ['dueFeeds', 'insertArticles', 'recordFetch', 'markFetchAttempt', 'purgeOldArticles', 'usersWithDevices'];
+
+// Users
+
+/**
+ * The user with this email, created on first login (with the default topics).
+ * Safe against two parallel first requests: the second insert is ignored and the row is read again.
+ * @param {any} db @param {string} email from normalizeEmail (src/users.js): checked, A–Z lower-cased, non-empty
+ * @returns {Promise<number>} user id
+ */
+export async function findOrCreateUser(db, email) {
+  const existing = await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+  if (existing) return existing.id;
+  const created = await db
+    .prepare('INSERT INTO users (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING RETURNING id')
+    .bind(email, Date.now())
+    .first();
+  if (!created) {
+    const row = await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+    return row.id;
+  }
+  const topic = db.prepare('INSERT OR IGNORE INTO topics (user_id, name) VALUES (?, ?)');
+  await db.batch(DEFAULT_TOPICS.map((name) => topic.bind(created.id, name)));
+  return created.id;
+}
+
+// Articles
 
 /**
  * @typedef {{ topic?: number|null, feed?: number|null, filter: 'unread'|'all'|'starred', page: number }} ArticleQuery
  */
 
-/** @param {ArticleQuery} q */
-function articleWhere(q) {
-  const where = ['a.is_hidden = 0'];
+/** @param {number} userId @param {ArticleQuery} q */
+function articleWhere(userId, q) {
+  const where = ['f.user_id = ?', 'a.is_hidden = 0'];
   /** @type {unknown[]} */
-  const params = [];
+  const params = [userId];
   if (q.topic) {
     where.push('f.topic_id = ?');
     params.push(q.topic);
@@ -28,16 +65,16 @@ function articleWhere(q) {
   return { sql: where.join(' AND '), params };
 }
 
-/** @param {any} db @param {ArticleQuery} q */
-export async function listArticles(db, q) {
-  const w = articleWhere(q);
+/** @param {any} db @param {number} userId @param {ArticleQuery} q */
+export async function listArticles(db, userId, q) {
+  const w = articleWhere(userId, q);
   const { results } = await db
     .prepare(
       `SELECT a.id, a.url, a.title, a.snippet, a.author, a.published_at, a.is_read, a.is_starred, a.image_url,
               f.id AS feed_id, f.title AS feed_title, t.id AS topic_id, t.name AS topic_name
          FROM articles a
          JOIN feeds f ON f.id = a.feed_id
-         LEFT JOIN topics t ON t.id = f.topic_id
+         LEFT JOIN topics t ON t.id = f.topic_id AND t.user_id = f.user_id
         WHERE ${w.sql}
         ORDER BY a.published_at DESC, a.id DESC
         LIMIT ? OFFSET ?`
@@ -47,9 +84,9 @@ export async function listArticles(db, q) {
   return { articles: results.slice(0, PAGE_SIZE), hasMore: results.length > PAGE_SIZE };
 }
 
-/** @param {any} db @param {ArticleQuery} q */
-export async function markAllRead(db, q) {
-  const w = articleWhere({ ...q, filter: 'unread' });
+/** @param {any} db @param {number} userId @param {ArticleQuery} q */
+export async function markAllRead(db, userId, q) {
+  const w = articleWhere(userId, { ...q, filter: 'unread' });
   await db
     .prepare(
       `UPDATE articles SET is_read = 1 WHERE id IN (
@@ -72,85 +109,135 @@ export function isArticleAction(action) {
   return Object.hasOwn(ARTICLE_ACTIONS, action);
 }
 
-/** @param {any} db @param {number} id @param {string} action */
-export async function updateArticle(db, id, action) {
+/** @param {any} db @param {number} userId @param {number} id @param {string} action @returns {Promise<any>} null if not the user's */
+export async function updateArticle(db, userId, id, action) {
   const set = ARTICLE_ACTIONS[/** @type {keyof ARTICLE_ACTIONS} */ (action)];
   return db
-    .prepare(`UPDATE articles SET ${set} WHERE id = ? RETURNING id, is_read, is_starred, is_hidden`)
-    .bind(id)
+    .prepare(
+      `UPDATE articles SET ${set}
+        WHERE id = ? AND feed_id IN (SELECT id FROM feeds WHERE user_id = ?)
+        RETURNING id, is_read, is_starred, is_hidden`
+    )
+    .bind(id, userId)
     .first();
 }
 
-/** Topics with unread counts, plus the overall unread total. @param {any} db */
-export async function topicsWithCounts(db) {
+/** @param {any} db @param {number} userId @param {number} id @returns {Promise<string>} '' if none or not the user's */
+export async function getArticleImageUrl(db, userId, id) {
+  const row = await db
+    .prepare('SELECT a.image_url FROM articles a JOIN feeds f ON f.id = a.feed_id WHERE a.id = ? AND f.user_id = ?')
+    .bind(id, userId)
+    .first();
+  return row?.image_url ?? '';
+}
+
+// Topics
+
+/** Topics with unread counts, plus the overall unread total. @param {any} db @param {number} userId */
+export async function topicsWithCounts(db, userId) {
   const [topics, total] = await db.batch([
-    db.prepare(
-      `SELECT t.id, t.name, t.weight, COUNT(a.id) AS unread,
-              (SELECT COUNT(*) FROM feeds WHERE topic_id = t.id) AS feed_count
-         FROM topics t
-         LEFT JOIN feeds f ON f.topic_id = t.id
-         LEFT JOIN articles a ON a.feed_id = f.id AND a.is_read = 0 AND a.is_hidden = 0
-        GROUP BY t.id
-        ORDER BY t.name COLLATE NOCASE`
-    ),
-    db.prepare('SELECT COUNT(*) AS unread FROM articles WHERE is_read = 0 AND is_hidden = 0'),
+    db
+      .prepare(
+        `SELECT t.id, t.name, t.weight, COUNT(a.id) AS unread,
+                (SELECT COUNT(*) FROM feeds WHERE topic_id = t.id AND user_id = t.user_id) AS feed_count
+           FROM topics t
+           LEFT JOIN feeds f ON f.topic_id = t.id AND f.user_id = t.user_id
+           LEFT JOIN articles a ON a.feed_id = f.id AND a.is_read = 0 AND a.is_hidden = 0
+          WHERE t.user_id = ?
+          GROUP BY t.id
+          ORDER BY t.name COLLATE NOCASE`
+      )
+      .bind(userId),
+    db
+      .prepare(
+        `SELECT COUNT(*) AS unread FROM articles a JOIN feeds f ON f.id = a.feed_id
+          WHERE f.user_id = ? AND a.is_read = 0 AND a.is_hidden = 0`
+      )
+      .bind(userId),
   ]);
   return { topics: topics.results, totalUnread: total.results[0]?.unread ?? 0 };
 }
 
-/** @param {any} db */
-export async function listFeeds(db) {
+/** @param {any} db @param {number} userId @param {number} id */
+export async function ownsTopic(db, userId, id) {
+  return Boolean(await db.prepare('SELECT 1 FROM topics WHERE id = ? AND user_id = ?').bind(id, userId).first());
+}
+
+/** @param {any} db @param {number} userId @param {string} name */
+export function insertTopic(db, userId, name) {
+  return db.prepare('INSERT INTO topics (user_id, name) VALUES (?, ?)').bind(userId, name).run();
+}
+
+/** @param {any} db @param {number} userId @param {number} id @param {string} name */
+export function renameTopic(db, userId, id, name) {
+  return db.prepare('UPDATE topics SET name = ? WHERE id = ? AND user_id = ?').bind(name, id, userId).run();
+}
+
+/** @param {any} db @param {number} userId @param {number} id */
+export function deleteTopic(db, userId, id) {
+  return db.batch([
+    db.prepare('UPDATE feeds SET topic_id = NULL WHERE topic_id = ? AND user_id = ?').bind(id, userId),
+    db.prepare('DELETE FROM topics WHERE id = ? AND user_id = ?').bind(id, userId),
+  ]);
+}
+
+// Feeds
+
+/** @param {any} db @param {number} userId */
+export async function listFeeds(db, userId) {
   const { results } = await db
     .prepare(
       `SELECT f.*, t.name AS topic_name,
               (SELECT COUNT(*) FROM articles WHERE feed_id = f.id) AS article_count
-         FROM feeds f LEFT JOIN topics t ON t.id = f.topic_id
+         FROM feeds f LEFT JOIN topics t ON t.id = f.topic_id AND t.user_id = f.user_id
+        WHERE f.user_id = ?
         ORDER BY t.name COLLATE NOCASE, f.title COLLATE NOCASE`
     )
+    .bind(userId)
     .all();
   return results;
 }
 
-/** @param {any} db @param {number} id */
-export function getFeed(db, id) {
-  return db.prepare('SELECT * FROM feeds WHERE id = ?').bind(id).first();
+/** @param {any} db @param {number} userId @param {number} id @returns {Promise<any>} null if not the user's */
+export function getFeed(db, userId, id) {
+  return db.prepare('SELECT * FROM feeds WHERE id = ? AND user_id = ?').bind(id, userId).first();
 }
 
-/** @param {any} db @param {number} id @returns {Promise<string>} '' if the article has no image */
-export async function getArticleImageUrl(db, id) {
-  const row = await db.prepare('SELECT image_url FROM articles WHERE id = ?').bind(id).first();
-  return row?.image_url ?? '';
+/** @param {any} db @param {number} userId @param {string} url */
+export function getFeedByUrl(db, userId, url) {
+  return db.prepare('SELECT * FROM feeds WHERE url = ? AND user_id = ?').bind(url, userId).first();
 }
 
-/** @param {any} db @param {string} url */
-export function getFeedByUrl(db, url) {
-  return db.prepare('SELECT * FROM feeds WHERE url = ?').bind(url).first();
-}
+// A feed's topic must be one of the same user's topics. The database can't express that, so the SQL
+// does: another user's (or a non-existent) topic id becomes NULL ("no topic").
+const OWN_TOPIC = '(SELECT id FROM topics WHERE id = ? AND user_id = ?)';
 
-/** @param {any} db @param {{url: string, title: string, siteUrl: string, topicId: number|null}} f */
-export async function insertFeed(db, f) {
+/** @param {any} db @param {number} userId @param {{url: string, title: string, siteUrl: string, topicId: number|null}} f */
+export async function insertFeed(db, userId, f) {
   const row = await db
-    .prepare('INSERT INTO feeds (url, title, site_url, topic_id) VALUES (?, ?, ?, ?) RETURNING *')
-    .bind(f.url, f.title, f.siteUrl, f.topicId)
+    .prepare(`INSERT INTO feeds (user_id, url, title, site_url, topic_id) VALUES (?, ?, ?, ?, ${OWN_TOPIC}) RETURNING *`)
+    .bind(userId, f.url, f.title, f.siteUrl, f.topicId, userId)
     .first();
   return row;
 }
 
-/** @param {any} db @param {number} id @param {{topicId: number|null, enabled: boolean, title: string}} f */
-export function updateFeed(db, id, f) {
+/** @param {any} db @param {number} userId @param {number} id @param {{topicId: number|null, enabled: boolean, title: string}} f */
+export function updateFeed(db, userId, id, f) {
   return db
-    .prepare('UPDATE feeds SET topic_id = ?, enabled = ?, title = ? WHERE id = ?')
-    .bind(f.topicId, f.enabled ? 1 : 0, f.title, id)
+    .prepare(`UPDATE feeds SET topic_id = ${OWN_TOPIC}, enabled = ?, title = ? WHERE id = ? AND user_id = ?`)
+    .bind(f.topicId, userId, f.enabled ? 1 : 0, f.title, id, userId)
     .run();
 }
 
-/** @param {any} db @param {number} id */
-export function deleteFeed(db, id) {
+/** @param {any} db @param {number} userId @param {number} id */
+export function deleteFeed(db, userId, id) {
   return db.batch([
-    db.prepare('DELETE FROM articles WHERE feed_id = ?').bind(id),
-    db.prepare('DELETE FROM feeds WHERE id = ?').bind(id),
+    db.prepare('DELETE FROM articles WHERE feed_id IN (SELECT id FROM feeds WHERE id = ? AND user_id = ?)').bind(id, userId),
+    db.prepare('DELETE FROM feeds WHERE id = ? AND user_id = ?').bind(id, userId),
   ]);
 }
+
+// Cron (all users)
 
 /** Feeds whose next fetch is due, least recently fetched first. @param {any} db @param {number} limit */
 export async function dueFeeds(db, limit) {
@@ -168,8 +255,8 @@ export async function dueFeeds(db, limit) {
 
 /**
  * @param {any} db
- * @param {number} feedId
- * @param {{guidHash: string, url: string, title: string, snippet: string, author: string, publishedAt: number}[]} items
+ * @param {number} feedId a feed that belongs to a user (from dueFeeds or getFeed)
+ * @param {{guidHash: string, url: string, title: string, snippet: string, author: string, publishedAt: number, imageUrl: string}[]} items
  */
 export async function insertArticles(db, feedId, items) {
   if (!items.length) return 0;
@@ -240,71 +327,67 @@ export function purgeOldArticles(db) {
   ]);
 }
 
-/** @param {any} db */
-export async function listTopics(db) {
-  const { results } = await db.prepare('SELECT id, name FROM topics ORDER BY name COLLATE NOCASE').all();
-  return results;
-}
-
-/** @param {any} db @param {string} name */
-export function insertTopic(db, name) {
-  return db.prepare('INSERT INTO topics (name) VALUES (?)').bind(name).run();
-}
-
-/** @param {any} db @param {number} id @param {string} name */
-export function renameTopic(db, id, name) {
-  return db.prepare('UPDATE topics SET name = ? WHERE id = ?').bind(name, id).run();
-}
-
-/** @param {any} db @param {number} id */
-export function deleteTopic(db, id) {
-  return db.batch([
-    db.prepare('UPDATE feeds SET topic_id = NULL WHERE topic_id = ?').bind(id),
-    db.prepare('DELETE FROM topics WHERE id = ?').bind(id),
-  ]);
-}
-
 // Push notifications
 
-/** @param {any} db @param {{ endpoint: string, p256dh: string, auth: string }} s */
-export function upsertSubscription(db, s) {
+/** Users with at least one subscribed device (for the daily summary). @param {any} db @returns {Promise<number[]>} */
+export async function usersWithDevices(db) {
+  const { results } = await db.prepare('SELECT DISTINCT user_id FROM push_subscriptions').all();
+  return results.map((/** @type {any} */ r) => r.user_id);
+}
+
+/**
+ * Store a device for this user. An endpoint belongs to one user at a time: subscribing again from the
+ * same device (e.g. after switching accounts) moves it.
+ * @param {any} db @param {number} userId @param {{ endpoint: string, p256dh: string, auth: string }} s
+ */
+export function upsertSubscription(db, userId, s) {
   return db
     .prepare(
-      `INSERT INTO push_subscriptions (endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?)
-       ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, last_error = ''`
+      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh,
+                                           auth = excluded.auth, last_error = ''`
     )
-    .bind(s.endpoint, s.p256dh, s.auth, Date.now())
+    .bind(userId, s.endpoint, s.p256dh, s.auth, Date.now())
     .run();
 }
 
-/** @param {any} db @param {string} endpoint */
-export function deleteSubscription(db, endpoint) {
-  return db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(endpoint).run();
+/** @param {any} db @param {number} userId @param {string} endpoint */
+export function deleteSubscription(db, userId, endpoint) {
+  return db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?').bind(endpoint, userId).run();
 }
 
-/** @param {any} db @returns {Promise<{ id: number, endpoint: string, p256dh: string, auth: string }[]>} */
-export async function listSubscriptions(db) {
-  const { results } = await db.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions').all();
-  return results;
-}
-
-/** @param {any} db @returns {Promise<{ id: number, endpoint: string, created_at: number, last_error: string }[]>} */
-export async function listDevices(db) {
+/** @param {any} db @param {number} userId @returns {Promise<{ id: number, endpoint: string, p256dh: string, auth: string }[]>} */
+export async function listSubscriptions(db, userId) {
   const { results } = await db
-    .prepare('SELECT id, endpoint, created_at, last_error FROM push_subscriptions ORDER BY created_at')
+    .prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?')
+    .bind(userId)
     .all();
   return results;
 }
 
-/** @param {any} db @param {number} id */
-export function deleteSubscriptionById(db, id) {
-  return db.prepare('DELETE FROM push_subscriptions WHERE id = ?').bind(id).run();
+/** @param {any} db @param {number} userId @returns {Promise<{ id: number, endpoint: string, created_at: number, last_error: string }[]>} */
+export async function listDevices(db, userId) {
+  const { results } = await db
+    .prepare('SELECT id, endpoint, created_at, last_error FROM push_subscriptions WHERE user_id = ? ORDER BY created_at')
+    .bind(userId)
+    .all();
+  return results;
 }
 
-/** @param {any} db @param {number} id @param {string} error */
-export function setSubscriptionError(db, id, error) {
-  return db.prepare('UPDATE push_subscriptions SET last_error = ? WHERE id = ?').bind(error, id).run();
+/** @param {any} db @param {number} userId @param {number} id */
+export function deleteSubscriptionById(db, userId, id) {
+  return db.prepare('DELETE FROM push_subscriptions WHERE id = ? AND user_id = ?').bind(id, userId).run();
 }
+
+/** @param {any} db @param {number} userId @param {number} id @param {string} error */
+export function setSubscriptionError(db, userId, id, error) {
+  return db
+    .prepare('UPDATE push_subscriptions SET last_error = ? WHERE id = ? AND user_id = ?')
+    .bind(error, id, userId)
+    .run();
+}
+
+// Job bookkeeping (keys carry the user id where needed, e.g. "digest_date:3")
 
 /** @param {any} db @param {string} key @returns {Promise<string|null>} */
 export async function getState(db, key) {
@@ -321,19 +404,20 @@ export function setState(db, key, value) {
 }
 
 /**
- * Unread, visible articles fetched after `since`, counted per enabled feed with the given notify mode.
- * @param {any} db @param {number} since epoch ms @param {string} notify
+ * Unread, visible articles fetched after `since`, counted per enabled feed of the user with the given notify mode.
+ * @param {any} db @param {number} userId @param {number} since epoch ms @param {string} notify
  * @returns {Promise<{ title: string, siteUrl: string, feedUrl: string, count: number }[]>}
  */
-export async function newArticleCounts(db, since, notify) {
+export async function newArticleCounts(db, userId, since, notify) {
   const { results } = await db
     .prepare(
       `SELECT f.title AS title, f.site_url AS siteUrl, f.url AS feedUrl, COUNT(*) AS count
          FROM articles a JOIN feeds f ON f.id = a.feed_id
-        WHERE a.fetched_at > ? AND a.is_read = 0 AND a.is_hidden = 0 AND f.enabled = 1 AND f.notify = ?
+        WHERE f.user_id = ? AND a.fetched_at > ? AND a.is_read = 0 AND a.is_hidden = 0
+          AND f.enabled = 1 AND f.notify = ?
         GROUP BY f.id`
     )
-    .bind(since, notify)
+    .bind(userId, since, notify)
     .all();
   return results;
 }

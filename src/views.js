@@ -39,7 +39,7 @@ function qs(params) {
 }
 
 /**
- * @param {{ title: string, active: string, topics: any[], totalUnread: number, currentTopic?: number|null, version: string, assetVersion: string, body: unknown }} p
+ * @param {{ title: string, active: string, topics: any[], totalUnread: number, currentTopic?: number|null, version: string, assetVersion: string, userEmail: string, body: unknown }} p
  */
 export function layout(p) {
   return html`<!doctype html>
@@ -68,6 +68,7 @@ export function layout(p) {
     <a href="/feeds" class="${p.active === 'feeds' ? 'on' : ''}">Feeds</a>
     <a href="/topics" class="${p.active === 'topics' ? 'on' : ''}">Topics</a>
   </nav>
+  <span class="who" title="Signed in as ${p.userEmail}">${p.userEmail}</span>
   <button type="button" class="theme-toggle" hidden>Theme</button>
 </header>
 <div class="wrap">

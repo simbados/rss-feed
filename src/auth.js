@@ -42,11 +42,12 @@ async function getKeys(team, force) {
 
 /**
  * @param {Request} request
- * @param {{ ACCESS_TEAM_DOMAIN?: string, ACCESS_AUD?: string, DEV_NO_AUTH?: string }} env
+ * @param {{ ACCESS_TEAM_DOMAIN?: string, ACCESS_AUD?: string, DEV_NO_AUTH?: string, DEV_EMAIL?: string }} env
  * @returns {Promise<{ ok: true, email: string } | { ok: false, reason: string }>}
  */
 export async function authenticate(request, env) {
-  if (env.DEV_NO_AUTH === '1') return { ok: true, email: 'dev@localhost' };
+  // Local development only (.dev.vars). DEV_EMAIL switches the local user; it has no effect without DEV_NO_AUTH.
+  if (env.DEV_NO_AUTH === '1') return { ok: true, email: env.DEV_EMAIL || 'dev@localhost' };
 
   const team = env.ACCESS_TEAM_DOMAIN;
   const aud = env.ACCESS_AUD;

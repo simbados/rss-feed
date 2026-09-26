@@ -22,7 +22,12 @@ PWA with a daily push summary. Live at `rss.simbados.com`. One user; security ma
   API token is an sbx secret (placeholder in `CLAUDE_ENV_FILE`). Never write real values into files.
 - **Migrations are additive only** (new tables/columns with defaults): the deploy migrates before the
   code goes live, so old code must keep working against the new schema. New file per change in
-  `migrations/NNNN_name.sql`; never edit an applied one.
+  `migrations/NNNN_name.sql`; never edit an applied one. (On 2026-09-26 the database was emptied and the
+  migrations squashed into one multi-user `0001_init.sql` — a one-off, see `docs/plan-users.md`.)
+- **Multi-user: every query on user data is scoped to the logged-in user.** Functions in `src/db.js`
+  take `userId`; articles are owned through `feeds.user_id`; every ID from a request is checked for
+  ownership (a foreign ID finds nothing → 404). Only the cron functions in `CRON_ONLY` work across
+  users. `test/security-rules.test.js` and `test/users.test.js` enforce this.
 - **Tests use reserved domains only** (RFC 2606/6761): `.invalid`, `.test`, `.example`, e.g.
   `https://ex.invalid/feed`, `https://x.test/`, `evil.example`. Never real-looking `.com`/`.org`/`.net`
   hosts in tests or fixtures. Exceptions, because the code or the format depends on the real name:
@@ -44,10 +49,11 @@ Browser / installed PWA ──► Cloudflare Access (login) ──► Worker (sr
 | File | Purpose |
 |---|---|
 | `src/index.js` | Router, security headers (CSP), CSRF same-origin check, `/img`, `/push/*`, cron entry |
-| `src/auth.js` | Verifies the Access JWT (WebCrypto); fails closed. `DEV_NO_AUTH=1` only in `.dev.vars` |
+| `src/auth.js` | Verifies the Access JWT (WebCrypto); fails closed. `DEV_NO_AUTH=1` (+ optional `DEV_EMAIL`) only in `.dev.vars` |
+| `src/users.js` | Access email → user id; a person's reader is created on first login |
 | `src/fetcher.js` | Cron refresh (20 feeds/run), backoff, add feed + discovery |
 | `src/parser.js` | RSS 2.0 / RSS 1.0 / Atom → plain text; image extraction; per-site fixes (`SITE_RULES`) |
-| `src/db.js` | All SQL |
+| `src/db.js` | All SQL, scoped by `userId` (cron functions listed in `CRON_ONLY`) |
 | `src/views.js`, `src/html.js` | Pages; escape-by-default `html` template, `safeUrl()` |
 | `src/static.js` | CSS, `/app.js`, `/theme.js`, `/sw.js`, manifest, SVG icon |
 | `src/images.js` | Image proxy: fetches only the URL stored for an article, raster types only, 5 MB, edge cache |
@@ -63,6 +69,8 @@ Browser / installed PWA ──► Cloudflare Access (login) ──► Worker (sr
 - CSP: no inline script/style, `img-src 'self'` (images go through the proxy), Trusted Types with the
   single policy `sw-url`. Adding a script tag or a CSP source needs a reason and a test update.
 - State-changing requests are POSTs and pass the same-origin check.
+- Every request is tied to the user from the verified Access email (`src/users.js`); a token without a
+  usable email gets 401. Users never see each other's feeds, articles, topics, devices or summaries.
 - The service worker opens only same-origin paths from notifications.
 
 ## Security reviews (by risk and at fixed points, not per change)
@@ -88,9 +96,15 @@ run in the background, based on `docs/security/owasp-top10-2025.md`. Show its fi
 put accepted ones into `docs/TODO.md`, and update `docs/security/last-review.md` after each review.
 Keep the checklist up to date when a feature adds a new attack surface.
 
+## Code walkthroughs
+The user reviews changes with the **`code-walkthrough`** skill (`.claude/skills/code-walkthrough/SKILL.md`):
+flow of information first, then one function or new file per chunk in call order, complete code, very
+brief explanation, waiting after each chunk. Use it whenever the user asks to be walked through code.
+
 ## Local development
 ```sh
 npm run db:migrate:local && npm run dev      # http://localhost:8787, no login (DEV_NO_AUTH)
+npm run dev -- --var DEV_EMAIL:b@x.test      # the same as a second user (tests isolation by hand)
 npm run dev:sandbox                          # same, on 0.0.0.0 for sbx port publishing
 curl localhost:8787/__scheduled              # run the cron once
 npm test

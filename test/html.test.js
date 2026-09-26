@@ -78,6 +78,7 @@ test('feeds page and layout escape feed/topic names', () => {
     totalUnread: 3,
     version: evil,
     assetVersion: 'abc12345',
+    userEmail: evil,
     body: feedsPage({
       feeds: [{ id: 1, url: 'javascript:alert(1)', site_url: '', title: evil, topic_id: 1, enabled: 1, article_count: 0, last_error: evil, error_count: 1 }],
       topics: [{ id: 1, name: evil }],
@@ -88,6 +89,12 @@ test('feeds page and layout escape feed/topic names', () => {
     }),
   }).toString();
   assert.doesNotMatch(page, /<script>alert/);
+  // The signed-in email is rendered in both places, escaped (not just absent).
+  const escaped = '&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;';
+  assert.ok(
+    page.includes(`<span class="who" title="Signed in as ${escaped}">${escaped}</span>`),
+    'header email present and escaped in attribute and text'
+  );
   assert.match(page, /<script src="\/theme\.js\?v=abc12345"><\/script>/);
   assert.match(page, /<script src="\/app\.js\?v=abc12345" defer><\/script>/);
   assert.match(page, /<link rel="stylesheet" href="\/app\.css\?v=abc12345">/);

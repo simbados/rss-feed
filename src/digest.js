@@ -4,7 +4,7 @@
 // a failed run, never sends twice.
 
 import * as db from './db.js';
-import { sendToAll } from './push.js';
+import { sendToUser } from './push.js';
 
 export const DIGEST_TIME_ZONE = 'Europe/Berlin';
 export const DIGEST_HOUR = 19;
@@ -80,21 +80,32 @@ export function buildDigest(rows) {
   };
 }
 
-/** Called from the cron. @param {any} env @param {number} [now] */
+/**
+ * Called from the cron: the summary for every user who has a device with notifications on.
+ * One user's failure doesn't stop the others.
+ * @param {any} env @param {number} [now]
+ */
 export async function maybeSendDigest(env, now = Date.now()) {
-  const due = digestDueDate(now, await db.getState(env.DB, 'digest_date'));
+  for (const userId of await db.usersWithDevices(env.DB)) {
+    await sendDigestFor(env, userId, now).catch((err) => console.error(`digest for user ${userId} failed`, err));
+  }
+}
+
+/** @param {any} env @param {number} userId @param {number} now */
+async function sendDigestFor(env, userId, now) {
+  const due = digestDueDate(now, await db.getState(env.DB, `digest_date:${userId}`));
   if (!due) return;
-  const since = Number(await db.getState(env.DB, 'digest_since')) || now - 86_400_000;
-  const rows = await db.newArticleCounts(env.DB, since, 'daily');
+  const since = Number(await db.getState(env.DB, `digest_since:${userId}`)) || now - 86_400_000;
+  const rows = await db.newArticleCounts(env.DB, userId, since, 'daily');
   // Mark as done before sending, so a partial failure never leads to a second summary.
-  await db.setState(env.DB, 'digest_date', due);
-  await db.setState(env.DB, 'digest_since', String(now));
+  await db.setState(env.DB, `digest_date:${userId}`, due);
+  await db.setState(env.DB, `digest_since:${userId}`, String(now));
 
   const message = buildDigest(rows);
   if (!message) {
-    console.log(`digest ${due}: nothing new`);
+    console.log(`digest ${due} user ${userId}: nothing new`);
     return;
   }
-  const r = await sendToAll(env, message);
-  console.log(`digest ${due}: ${message.title}; sent ${r.sent}, failed ${r.failed}${r.error ? ` (${r.error})` : ''}`);
+  const r = await sendToUser(env, userId, message);
+  console.log(`digest ${due} user ${userId}: ${message.title}; sent ${r.sent}, failed ${r.failed}${r.error ? ` (${r.error})` : ''}`);
 }

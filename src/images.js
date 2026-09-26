@@ -50,16 +50,18 @@ async function fetchImage(url) {
 
 /**
  * Image bytes for an article, from the edge cache or the publisher.
- * The cache key is the image URL itself, so a reused article id can never show a stale image.
- * @param {Request} request @param {any} env @param {{ waitUntil(p: Promise<unknown>): void }} ctx @param {number} id
+ * The cache key is the user plus the image URL: a reused article id can never show a stale image, and a
+ * cache hit never tells one user what another user has loaded ("someone else follows this feed").
+ * @param {Request} request @param {any} env @param {{ waitUntil(p: Promise<unknown>): void }} ctx @param {number} userId @param {number} id
  * @returns {Promise<{ body: ReadableStream | Uint8Array | null, type: string, maxAge: number } | null>}
  */
-export async function articleImage(request, env, ctx, id) {
-  const imageUrl = await db.getArticleImageUrl(env.DB, id);
+export async function articleImage(request, env, ctx, userId, id) {
+  // Only an image of the user's own article; a foreign id finds nothing (404).
+  const imageUrl = await db.getArticleImageUrl(env.DB, userId, id);
   if (!imageUrl) return null;
 
   const cache = /** @type {any} */ (caches).default;
-  const key = new Request(new URL(`/img-cache/${await sha256Hex(imageUrl)}`, request.url));
+  const key = new Request(new URL(`/img-cache/${userId}/${await sha256Hex(imageUrl)}`, request.url));
   const hit = await cache.match(key);
   if (hit) return { body: hit.body, type: hit.headers.get('content-type') ?? '', maxAge: BROWSER_CACHE_SECONDS };
 

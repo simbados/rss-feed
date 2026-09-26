@@ -10,18 +10,22 @@ import { b64urlDecode, sendPush, vapidFromEnv } from './webpush.js';
  */
 
 /**
- * Send to all subscriptions; drops the ones the push service reports as gone.
- * @param {any} env @param {PushMessage} message
+ * Send to all devices of one user; drops the ones the push service reports as gone.
+ * @param {any} env @param {number} userId @param {PushMessage} message
  * @returns {Promise<{ sent: number, failed: number, error: string }>}
  */
-export async function sendToAll(env, message) {
+export async function sendToUser(env, userId, message) {
   const vapid = vapidFromEnv(env);
   if (!vapid) return { sent: 0, failed: 0, error: 'push is not configured (VAPID keys missing)' };
   // Rows that didn't come through parseSubscription (older data, other code paths) never get a request.
   const subs = [];
-  for (const s of await db.listSubscriptions(env.DB)) {
-    if (isPushServiceHost(hostOf(s.endpoint))) subs.push(s);
-    else await db.deleteSubscription(env.DB, s.endpoint);
+  for (const s of await db.listSubscriptions(env.DB, userId)) {
+    if (isPushServiceHost(hostOf(s.endpoint)) && s.endpoint.startsWith('https://')) {
+      subs.push(s);
+    } else {
+      console.warn(`push: dropped a device of user ${userId} with a disallowed endpoint host (${hostOf(s.endpoint) || 'invalid'})`);
+      await db.deleteSubscription(env.DB, userId, s.endpoint);
+    }
   }
   if (!subs.length) return { sent: 0, failed: 0, error: 'no device has notifications turned on' };
 
@@ -35,7 +39,9 @@ export async function sendToAll(env, message) {
         return null;
       }
       error ||= r.error;
-      return r.gone ? db.deleteSubscription(env.DB, subs[i].endpoint) : db.setSubscriptionError(env.DB, subs[i].id, r.error);
+      return r.gone
+        ? db.deleteSubscription(env.DB, userId, subs[i].endpoint)
+        : db.setSubscriptionError(env.DB, userId, subs[i].id, r.error);
     })
   );
   return { sent, failed: subs.length - sent, error };

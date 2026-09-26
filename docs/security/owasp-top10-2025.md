@@ -5,15 +5,21 @@ Source: https://top10.owasp.org/2025/ (checked 2026-09-25). Used by the `securit
 **where it applies here**, then **what to check in a diff**. Update this file when OWASP publishes a new
 list or a feature adds a new attack surface.
 
-Context: single-user reader on Cloudflare Workers + D1 behind Cloudflare Access. Untrusted input comes
+Context: multi-user reader (each user sees only their own data) on Cloudflare Workers + D1 behind Cloudflare Access. Untrusted input comes
 from **feed servers** (XML, HTML, URLs, images), **the browser** (forms, JSON, URLs) and **push services**
 (responses). Secrets: `VAPID_PRIVATE_KEY` (Worker secret), the Cloudflare API token (sbx secret).
 
 ## A01:2025 – Broken Access Control
 Here: every request passes `authenticate()` in `src/index.js` before routing; POSTs pass `isSameOrigin()`
 (CSRF); `/img/<id>` only fetches the URL stored for that article; `/push/*` changes subscriptions;
-Worker-level Access protects all hostnames incl. previews.
+Worker-level Access protects all hostnames incl. previews. **Multi-user:** every request is tied to a
+user (`src/users.js`); all queries in `src/db.js` are scoped by `userId`, articles via `feeds.user_id`.
 Check:
+- A new query on `topics`/`feeds`/`articles`/`push_subscriptions` without the user filter, or a new
+  function that takes an ID from the request without checking it belongs to the user (IDOR)?
+- A value from a form or query string (topic id, feed id) used for another user's row — e.g. assigning
+  a foreign topic to one's own feed?
+- A new cron/global function added to `CRON_ONLY` without a good reason?
 - New route or handler reachable **before** `authenticate()`, or a new state change done via GET?
 - New POST/JSON endpoint that skips the same-origin check, or accepts cross-origin requests?
 - An endpoint that fetches or returns data chosen by the request (URL, id) instead of stored data → SSRF /
