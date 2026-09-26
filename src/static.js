@@ -59,10 +59,17 @@ h1 { font-size: 20px; margin: 0; }
 .meta, .sub { color: var(--muted); font-size: 13px; }
 .meta a { text-decoration: none; }
 .meta a:hover { text-decoration: underline; }
-/* Feed name stands out from topic/author/time; the badge colour is fixed per feed (feedBadge in views.js). */
-.meta a.feed { color: var(--fg); font-weight: 500; }
-.badge { display: inline-block; width: 16px; height: 16px; margin-right: 5px; border-radius: 4px; vertical-align: -3px;
-  color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
+/* Article meta: one line, centred. The feed name and author shrink with "…"; the time never does.
+   Separators come from CSS so the row stays a clean flex line. */
+.item .meta { display: flex; align-items: center; gap: 5px; white-space: nowrap; min-width: 0; }
+.item .meta > * { flex: none; }
+.item .meta > * + *::before { content: "·"; display: inline-block; margin-right: 5px; }
+.item .meta a.feed { display: inline-flex; align-items: center; gap: 5px; min-width: 0; flex: 0 1 auto; color: var(--fg); font-weight: 500; }
+.item .meta .name, .item .meta .author { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.item .meta .author { flex: 0 2 auto; }
+/* Feed badge, colour fixed per feed (feedBadge in views.js). */
+.badge { flex: none; width: 15px; height: 15px; border-radius: 4px;
+  color: #fff; font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; }
 .item.is-read .badge { opacity: .6; }
 .feed-c0 { background: #b91c1c; } .feed-c1 { background: #c2410c; } .feed-c2 { background: #a16207; }
 .feed-c3 { background: #15803d; } .feed-c4 { background: #0f766e; } .feed-c5 { background: #0369a1; }
@@ -99,6 +106,7 @@ table.feeds tr.disabled { opacity: .55; }
   .wrap { grid-template-columns: 1fr; }
   .side { position: static; flex-direction: row; flex-wrap: wrap; }
   .version { display: none; }
+  .item .meta .topic, .item .meta .author { display: none; }
   .add input[type=url] { min-width: 0; width: 100%; }
   table.feeds thead { display: none; }
   table.feeds td { display: block; border: 0; padding: 4px 0; }

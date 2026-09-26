@@ -55,6 +55,7 @@ export function layout(p) {
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="RSS">
 <script src="/theme.js?v=${p.assetVersion}"></script>
@@ -109,10 +110,10 @@ export function articleItem(a) {
     <div>
       <h2><a class="title" href="${safeUrl(a.url)}" target="_blank" rel="noopener noreferrer">${a.title || '(untitled)'}</a></h2>
       <div class="meta">
-        <a class="feed" href="${qs({ feed: a.feed_id })}">${feedBadge(a.feed_id, a.feed_title)}${a.feed_title}</a>
-        ${a.topic_name ? html`· <a href="${qs({ topic: a.topic_id })}">${a.topic_name}</a>` : ''}
-        ${a.author ? html`· ${a.author}` : ''}
-        · ${time(a.published_at)}
+        <a class="feed" href="${qs({ feed: a.feed_id })}" title="${a.feed_title}">${feedBadge(a.feed_id, a.feed_title)}<span class="name">${a.feed_title}</span></a>
+        ${a.topic_name ? html`<a class="topic" href="${qs({ topic: a.topic_id })}">${a.topic_name}</a>` : ''}
+        ${a.author ? html`<span class="author">${a.author}</span>` : ''}
+        ${time(a.published_at)}
       </div>
     </div>
     ${a.image_url ? html`<img class="thumb" src="/img/${a.id}" alt="" loading="lazy" decoding="async">` : ''}

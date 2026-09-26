@@ -117,5 +117,5 @@ test('feed badge: first letter or digit, colour class fixed per feed id, escaped
   assert.match(feedBadge(1, '').toString(), />•</, 'fallback without a title');
   assert.match(feedBadge(/** @type {any} */ ('x" onclick="y'), 'T').toString(), /class="badge feed-c0"/, 'class contains only a number');
   const item = articleItem({ id: 1, title: 'T', url: '', feed_id: 2, feed_title: 'Feed', published_at: 0, is_read: 0, is_starred: 0 }).toString();
-  assert.match(item, /<a class="feed" href="\/\?feed=2"><span class="badge feed-c2" aria-hidden="true">F<\/span>Feed<\/a>/);
+  assert.match(item, /<a class="feed" href="\/\?feed=2" title="Feed"><span class="badge feed-c2" aria-hidden="true">F<\/span><span class="name">Feed<\/span><\/a>/);
 });
