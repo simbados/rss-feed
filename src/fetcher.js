@@ -9,6 +9,9 @@ export const FEEDS_PER_RUN = 20; // keeps us well under the Workers subrequest l
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const BASE_INTERVAL_MS = 30 * 60 * 1000;
+// A feed fetched a few seconds into a run is due a few seconds *after* the run 30 minutes later
+// starts; without slack it would wait one extra run. Cron every 15 min → fetched about every 30 min.
+export const DUE_SLACK_MS = 2 * 60 * 1000;
 const MAX_BACKOFF_MS = 24 * 60 * 60 * 1000;
 export const USER_AGENT = 'rss-feed-worker/1.0 (personal feed reader)';
 
@@ -146,8 +149,8 @@ export async function refreshFeed(env, feed) {
 
 /**
  * Delete old articles at most once per calendar day (Europe/Berlin): the purge reads the whole
- * articles table, and every 30 minutes that would approach the free plan's daily D1 read limit.
- * Marked as done before purging, like the daily summary, so a failure doesn't retry every 30 minutes.
+ * articles table, and every 15 minutes that would approach the free plan's daily D1 read limit.
+ * Marked as done before purging, like the daily summary, so a failure doesn't retry on every run.
  * @param {any} env @param {number} [now]
  * @returns {Promise<boolean>} whether it ran
  */
@@ -166,7 +169,7 @@ export async function runScheduled(env) {
   await maybeSendDigest(env).catch((err) => console.error('digest failed', err));
   await purgeOncePerDay(env).catch((err) => console.error('purge failed', err));
 
-  const feeds = await db.dueFeeds(env.DB, FEEDS_PER_RUN);
+  const feeds = await db.dueFeeds(env.DB, FEEDS_PER_RUN, Date.now() + DUE_SLACK_MS);
   const results = await Promise.all(feeds.map((/** @type {any} */ f) => refreshFeed(env, f)));
   const added = results.reduce((n, r) => n + r.added, 0);
   const failed = results.filter((r) => r.error);

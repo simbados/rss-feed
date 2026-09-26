@@ -1,6 +1,6 @@
 // @ts-check
 // Daily summary notification at 19:00 Europe/Berlin. Cloudflare crons run in UTC, so the
-// 30-minute cron asks "is it past 19:00 locally and not sent today?" — DST-safe, catches up after
+// 15-minute cron asks "is it past 19:00 locally and not sent today?" — DST-safe, catches up after
 // a failed run, never sends twice.
 
 import * as db from './db.js';

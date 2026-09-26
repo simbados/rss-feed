@@ -40,7 +40,7 @@ PWA with a daily push summary. Live at `rss.simbados.com`. One user; security ma
 ## Architecture
 ```
 Browser / installed PWA ──► Cloudflare Access (login) ──► Worker (src/index.js) ──► D1
-                                                            │  cron */30: refresh feeds, daily digest
+                                                            │  cron */15: refresh feeds, daily digest
                                                             ├─► feed servers (fetch, conditional GET)
                                                             ├─► image hosts (via /img/<id> proxy)
                                                             └─► push services (Apple) ──► device

@@ -6,6 +6,7 @@ import { createTestDb } from './helpers/d1.js';
 import * as db from '../src/db.js';
 import { parseAllowedEmails, resolveUser } from '../src/users.js';
 import { maybeSendDigest } from '../src/digest.js';
+import { DUE_SLACK_MS } from '../src/fetcher.js';
 
 const FEED_URL = 'https://news.x.test/feed.xml';
 const topicsOf = async (DB, user) => (await db.topicsWithCounts(DB, user)).topics;
@@ -164,6 +165,15 @@ test('cron sees every user’s due feeds; deleting a user removes all their data
   assert.equal((await db.listFeeds(DB, a)).length, 0);
   assert.equal(DB.sqlite.prepare('SELECT COUNT(*) AS n FROM articles').get().n, 3, 'only B’s articles left');
   assert.equal((await db.listFeeds(DB, b)).length, 1);
+});
+
+test('cron: a feed due within the slack is picked up, one due later is not', async () => {
+  const { DB, feedA, feedB } = await setup();
+  const now = Date.now();
+  DB.sqlite.prepare('UPDATE feeds SET next_fetch_at = ? WHERE id = ?').run(now + 60_000, feedA.id);
+  DB.sqlite.prepare('UPDATE feeds SET next_fetch_at = ? WHERE id = ?').run(now + 10 * 60_000, feedB.id);
+  assert.deepEqual((await db.dueFeeds(DB, 20, now + DUE_SLACK_MS)).map((f) => f.id), [feedA.id]);
+  assert.equal((await db.dueFeeds(DB, 20, now)).length, 0, 'without slack neither is due');
 });
 
 test('isolation: a feed can only get its own user\'s topic', async () => {

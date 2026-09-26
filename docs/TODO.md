@@ -17,8 +17,9 @@ in `docs/security/last-review.md`. Remove items once they're done.
 - [ ] **Outgoing requests per cron run — only relevant with many feeds.** A Worker invocation on the
   free plan may make 50 outgoing requests (redirects count too). The cron fetches up to
   `FEEDS_PER_RUN = 20` due feeds (`src/fetcher.js`) after sending the summary pushes (those go first, so
-  they're never starved). With more than ~20 feeds across all users, feeds take turns (e.g. 60 feeds →
-  each about every 1.5 h); many redirecting feeds could exceed 50, and the overflow fails with backoff.
+  they're never starved). The cron runs every 15 min and each feed is due every 30 min, so up to ~40 feeds
+  across all users keep their interval; beyond that feeds take turns (e.g. 80 feeds → each about every
+  hour); many redirecting feeds could exceed 50, and the overflow fails with backoff.
   Levers if it ever matters: cron every 10 min, a lower `FEEDS_PER_RUN`, storing permanent redirects, a
   log warning when feeds fall behind, or the paid plan (1000 requests). Not expected with our feed count.
 

@@ -13,7 +13,7 @@ globs = ["**/*.png"]
 fallthrough = true
 
 [triggers]
-crons = ["*/30 * * * *"]
+crons = ["*/15 * * * *"]
 
 [[d1_databases]]
 binding = "DB"

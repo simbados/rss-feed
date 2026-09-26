@@ -239,8 +239,11 @@ export function deleteFeed(db, userId, id) {
 
 // Cron (all users)
 
-/** Feeds whose next fetch is due, least recently fetched first. @param {any} db @param {number} limit */
-export async function dueFeeds(db, limit) {
+/**
+ * Feeds whose next fetch is due by `dueBy`, least recently fetched first.
+ * @param {any} db @param {number} limit @param {number} [dueBy] epoch ms (the cron adds a little slack)
+ */
+export async function dueFeeds(db, limit, dueBy = Date.now()) {
   const { results } = await db
     .prepare(
       `SELECT * FROM feeds
@@ -248,7 +251,7 @@ export async function dueFeeds(db, limit) {
         ORDER BY last_fetched_at IS NOT NULL, last_fetched_at
         LIMIT ?`
     )
-    .bind(Date.now(), limit)
+    .bind(dueBy, limit)
     .all();
   return results;
 }
