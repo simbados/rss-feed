@@ -285,6 +285,11 @@ ${p.error ? html`<p class="flash error">${p.error}</p>` : ''}
 </form>`;
 }
 
+/** "Fri, Sat, Sun" for a pause_days mask, '' if none. @param {number} mask */
+function pausedDays(mask) {
+  return WEEKDAYS.filter((_d, i) => isPausedOn(mask, i)).join(', ');
+}
+
 /** @param {{ topics: any[], error?: string }} p */
 export function topicsPage(p) {
   return html`<h1>Topics</h1>
@@ -293,9 +298,8 @@ ${p.error ? html`<p class="flash error">${p.error}</p>` : ''}
   <label>New topic <input type="text" name="name" required maxlength="50"></label>
   <button type="submit">Add topic</button>
 </form>
-<p class="sub">Paused days: the topic is left out of “All” on those days (Europe/Berlin). Its own page still shows everything.</p>
 <table class="feeds">
-  <thead><tr><th>Name / paused days</th><th>Feeds</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Feeds</th><th></th></tr></thead>
   <tbody>
   ${p.topics.map(
     (t) => html`<tr>
@@ -303,11 +307,14 @@ ${p.error ? html`<p class="flash error">${p.error}</p>` : ''}
       <form method="post" action="/topics/${t.id}" class="inline">
         <input type="text" name="name" value="${t.name}" required maxlength="50" aria-label="Topic name">
         <button type="submit">Save</button>
-        <span class="days">
-          ${WEEKDAYS.map(
-            (d, i) => html`<label class="check"><input type="checkbox" name="pause" value="${i}" ${isPausedOn(t.pause_days ?? 0, i) ? html`checked` : ''}>${d}</label>`
-          )}
-        </span>
+        <details class="days">
+          <summary>${pausedDays(t.pause_days ?? 0) ? `Paused: ${pausedDays(t.pause_days ?? 0)}` : 'Pause…'}</summary>
+          <span class="day-picker">
+            ${WEEKDAYS.map(
+              (d, i) => html`<label class="check"><input type="checkbox" name="pause" value="${i}" ${isPausedOn(t.pause_days ?? 0, i) ? html`checked` : ''}>${d}</label>`
+            )}
+          </span>
+        </details>
       </form>
     </td>
     <td>${t.feed_count}</td>

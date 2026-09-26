@@ -148,6 +148,10 @@ test('topics page: pause checkboxes reflect pause_days; names escaped', () => {
   assert.doesNotMatch(out, /<script>alert/);
   const checked = [...out.matchAll(/name="pause" value="(\d)" ([a-z]*)>/g)].map((m) => [m[1], m[2]]);
   assert.deepEqual(checked, [['0', ''], ['1', ''], ['2', ''], ['3', ''], ['4', 'checked'], ['5', 'checked'], ['6', 'checked']]);
+  assert.match(out, /<details class="days">\s*<summary>Paused: Fri, Sat, Sun<\/summary>/, 'collapsed, state in the label');
+  const none = topicsPage({ topics: [{ id: 3, name: 'Tech', feed_count: 0, pause_days: 0 }] }).toString();
+  assert.match(none, /<summary>Pause…<\/summary>/);
+  assert.doesNotMatch(none, /<details class="days" open/);
 });
 
 test('timeline: note about topics paused today, escaped; none without pauses', () => {
