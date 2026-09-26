@@ -64,10 +64,10 @@ test('the dev auth bypass is never configured for deployment', () => {
 test('multi-user: every query on user data is scoped by user_id (except the named cron functions)', async () => {
   const { CRON_ONLY } = await import('../src/db.js');
   // Pinned here on purpose: exempting another function must be a visible change to this test.
-  assert.deepEqual(CRON_ONLY, ['dueFeeds', 'insertArticles', 'recordFetch', 'markFetchAttempt', 'purgeOldArticles', 'usersWithDevices']);
+  assert.deepEqual(CRON_ONLY, ['dueFeeds', 'insertArticles', 'recordFetch', 'markFetchAttempt', 'purgeOldArticles', 'usersWithDevices', 'muteRulesForFeed']);
 
   const src = read('src/db.js');
-  const USER_TABLES = /\b(topics|feeds|articles|push_subscriptions)\b/;
+  const USER_TABLES = /\b(topics|feeds|articles|push_subscriptions|mute_rules)\b/;
   // articleWhere builds the WHERE of the article queries; it must start with the user filter.
   assert.match(src, /function articleWhere\(userId, q\) \{\s*const where = \['f\.user_id = \?'/);
 
@@ -95,7 +95,7 @@ test('multi-user: every query on user data is scoped by user_id (except the name
     for (const sql of touching) {
       const scoped =
         /\buser_id\s*=\s*\?/.test(sql) || // a real filter on the user
-        /INSERT (OR \w+ )?INTO (topics|feeds|push_subscriptions) \(user_id\b/.test(sql); // a new row owned by the user
+        /INSERT (OR \w+ )?INTO (topics|feeds|push_subscriptions|mute_rules) \(user_id\b/.test(sql); // a new row owned by the user
       assert.ok(scoped, `${name}: query not scoped to the user:\n${sql}`);
     }
   });

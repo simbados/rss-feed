@@ -7,6 +7,7 @@ import * as db from './db.js';
 import { addFeed, refreshFeed, runScheduled } from './fetcher.js';
 import { SafeHtml } from './html.js';
 import { articleImage } from './images.js';
+import { MAX_RULES_PER_USER, MUTE_SCAN_LIMIT, cleanPattern, isMuteField, matchRule, normalize, urlPattern } from './mute.js';
 import appleTouchIcon from './icons/apple-touch-icon.png';
 import icon192 from './icons/icon-192.png';
 import icon512Maskable from './icons/icon-512-maskable.png';
@@ -172,10 +173,11 @@ async function renderTimeline(env, user, url) {
  * @param {number} [status]
  */
 async function renderFeeds(env, user, extra = {}, status = 200) {
-  const [feeds, nav, subs] = await Promise.all([
+  const [feeds, nav, subs, muteRules] = await Promise.all([
     db.listFeeds(env.DB, user.id),
     db.topicsWithCounts(env.DB, user.id),
     db.listDevices(env.DB, user.id),
+    db.listMuteRules(env.DB, user.id),
   ]);
   const devices = subs.map((s) => ({ id: s.id, host: endpointHost(s.endpoint), createdAt: s.created_at, lastError: s.last_error }));
   return htmlResponse(
@@ -187,7 +189,7 @@ async function renderFeeds(env, user, extra = {}, status = 200) {
       version: versionLabel(env),
       assetVersion: assetVersion(env),
       userEmail: user.email,
-      body: views.feedsPage({ feeds, topics: nav.topics, pushKey: env.VAPID_PUBLIC_KEY ?? '', devices, ...extra }),
+      body: views.feedsPage({ feeds, topics: nav.topics, pushKey: env.VAPID_PUBLIC_KEY ?? '', devices, muteRules, ...extra }),
     }),
     status
   );
@@ -209,6 +211,72 @@ async function renderTopics(env, user, error) {
     }),
     error ? 400 : 200
   );
+}
+
+/**
+ * The "Mute…" form for one article, pre-filled with its title (or URL path) and a preview of what the
+ * rule would hide now.
+ * @param {any} env @param {User} user @param {URL} url
+ * @param {{ field?: string, pattern?: string, scope?: string, error?: string }} [form] values after a failed post
+ */
+async function renderMuteForm(env, user, url, form = {}) {
+  const article = await db.getArticleForMute(env.DB, user.id, toId(url.searchParams.get('article')) ?? 0);
+  if (!article) return errorResponse(404, 'Article not found.');
+  const field = isMuteField(form.field ?? url.searchParams.get('field')) ? /** @type {'title'|'url'} */ (form.field ?? url.searchParams.get('field')) : 'title';
+  const pattern = form.pattern ?? (field === 'url' ? urlPattern(article.url) : normalize(article.title));
+  const [nav, candidates] = await Promise.all([db.topicsWithCounts(env.DB, user.id), db.muteCandidates(env.DB, user.id, null)]);
+  const clean = cleanPattern(pattern);
+  const rule = clean ? [{ id: 1, field, pattern: clean }] : [];
+  const matches = candidates.filter((a) => matchRule(rule, a));
+  return htmlResponse(
+    views.layout({
+      title: 'Mute',
+      active: '',
+      topics: nav.topics,
+      totalUnread: nav.totalUnread,
+      version: versionLabel(env),
+      assetVersion: assetVersion(env),
+      userEmail: user.email,
+      body: views.muteForm({
+        article,
+        field,
+        pattern,
+        scope: form.scope === 'all' ? 'all' : 'feed',
+        preview: { feed: matches.filter((a) => a.feed_id === article.feed_id).length, all: matches.length, limited: candidates.length >= MUTE_SCAN_LIMIT },
+        error: form.error,
+      }),
+    }),
+    form.error ? 400 : 200
+  );
+}
+
+/**
+ * Create a mute rule and hide what it matches now. Future articles are checked when they're fetched.
+ * @param {any} env @param {User} user @param {URL} url @param {FormData} form
+ */
+async function createMuteRule(env, user, url, form) {
+  const articleId = toId(form.get('article'));
+  const article = articleId && (await db.getArticleForMute(env.DB, user.id, articleId));
+  if (!article) return errorResponse(404, 'Article not found.');
+  const field = form.get('field');
+  const scope = form.get('scope') === 'all' ? 'all' : 'feed';
+  const raw = String(form.get('pattern') ?? '');
+  const back = new URL(`/mute/new?article=${article.id}`, url);
+  const again = (/** @type {string} */ error) => renderMuteForm(env, user, back, { field: String(field), pattern: raw.slice(0, 300), scope, error });
+
+  if (!isMuteField(field)) return again('Choose title or URL.');
+  const pattern = cleanPattern(raw);
+  if (!pattern) return again('The text must be 2–200 characters long.');
+  if ((await db.countMuteRules(env.DB, user.id)) >= MAX_RULES_PER_USER) return again(`You already have ${MAX_RULES_PER_USER} mute rules. Delete one first.`);
+
+  const feedId = scope === 'all' ? null : article.feed_id;
+  // The rule is saved before existing articles are hidden. If that step is cut off (CPU limit), posting the
+  // same rule again repeats it instead of failing with "already exists".
+  const rule = (await db.insertMuteRule(env.DB, user.id, { feedId, field, pattern })) ?? (await db.findMuteRule(env.DB, user.id, { feedId, field, pattern }));
+  if (!rule) return errorResponse(404, 'Feed not found.');
+  const matches = (await db.muteCandidates(env.DB, user.id, feedId)).filter((a) => matchRule([rule], a));
+  const hidden = await db.hideByMuteRule(env.DB, user.id, rule.id, matches.map((a) => a.id));
+  return renderFeeds(env, user, { message: `Muted "${pattern}": ${hidden} ${hidden === 1 ? 'article' : 'articles'} hidden now, new ones stay hidden.` });
 }
 
 /** @param {unknown} v */
@@ -243,6 +311,13 @@ async function handlePost(request, env, user, url) {
   if (path === '/articles/mark-all-read') {
     await db.markAllRead(env.DB, user.id, { topic: toId(form.get('topic')), feed: toId(form.get('feed')), filter: 'unread', page: 0 });
     return redirect(backTo(request, url));
+  }
+
+  // Mute rules
+  if (path === '/mute') return createMuteRule(env, user, url, form);
+  if ((m = path.match(/^\/mute\/(\d+)\/delete$/))) {
+    if (!(await db.deleteMuteRule(env.DB, user.id, Number(m[1])))) return errorResponse(404, 'Rule not found.');
+    return redirect('/feeds#muted');
   }
 
   // Push notifications (JSON bodies, sent by /app.js)
@@ -403,6 +478,8 @@ async function handle(request, env, ctx) {
         return renderFeeds(env, user);
       case '/topics':
         return renderTopics(env, user);
+      case '/mute/new':
+        return renderMuteForm(env, user, url);
       case '/app.css':
         return respond(CSS, 200, { 'content-type': 'text/css; charset=utf-8', 'cache-control': assetCache(url) });
       case '/app.js':

@@ -9,6 +9,7 @@
 // test/xss-rules.test.js checks these rules against the source.
 
 import { html, safeUrl } from './html.js';
+import { MUTE_SCAN_LIMIT } from './mute.js';
 
 /** @param {number|null|undefined} ms */
 export function timeAgo(ms, now = Date.now()) {
@@ -121,7 +122,7 @@ export function articleItem(a) {
   ${a.snippet ? html`<p class="snippet">${a.snippet}</p>` : ''}
   <div class="actions">
     <form method="post" action="/articles/${a.id}/${readAction}" class="js-action">
-      <button type="submit" data-kind="read">${a.is_read ? 'Mark unread' : 'Mark read'}</button>
+      <button type="submit" data-kind="read">${a.is_read ? 'Unread' : 'Read'}</button>
     </form>
     <form method="post" action="/articles/${a.id}/${starAction}" class="js-action">
       <button type="submit" data-kind="star">${a.is_starred ? '★ Unstar' : '☆ Star'}</button>
@@ -129,6 +130,7 @@ export function articleItem(a) {
     <form method="post" action="/articles/${a.id}/hide" class="js-action">
       <button type="submit" data-kind="hide">Hide</button>
     </form>
+    <a class="btn" href="/mute/new?article=${a.id}" title="Hide this and similar articles from now on">Mute…</a>
     ${safeUrl(a.url) !== '#'
       ? html`<a class="open-brave" href="${safeUrl(a.url)}" target="_blank" rel="noopener noreferrer" hidden>↗ Brave</a>`
       : ''}
@@ -172,7 +174,7 @@ function topicSelect(topics, selected, name = 'topic') {
 
 /**
  * @param {{ feeds: any[], topics: any[], pushKey: string, devices: { id: number, host: string, createdAt: number, lastError: string }[],
- *   error?: string, message?: string, formUrl?: string }} p
+ *   muteRules: any[], error?: string, message?: string, formUrl?: string }} p
  */
 export function feedsPage(p) {
   return html`<h1>Feeds</h1>
@@ -227,7 +229,57 @@ ${p.message ? html`<p class="flash">${p.message}</p>` : ''}
   </tr>`
   )}
   </tbody>
-</table>`;
+</table>
+${muteRulesSection(p.muteRules)}`;
+}
+
+/** @param {any[]} rules */
+function muteRulesSection(rules) {
+  return html`<section class="card" id="muted">
+  <h2>Muted</h2>
+  ${rules.length
+    ? html`<p class="sub">Articles matching a rule are hidden when they arrive. Deleting a rule brings its articles back (as read).</p>
+  <ul class="rules">
+    ${rules.map(
+      (r) => html`<li>
+      <span><b>${r.field === 'url' ? 'URL' : 'Title'}</b> contains “${r.pattern}” · ${r.feed_id ? r.feed_title : 'all feeds'} ·
+        ${r.hidden_count} hidden</span>
+      <form method="post" action="/mute/${r.id}/delete" class="inline js-confirm" data-confirm="Delete this rule? Its articles come back."><button type="submit" class="danger">Delete</button></form>
+    </li>`
+    )}
+  </ul>`
+    : html`<p class="sub">No mute rules. Use “Mute…” on an article to hide recurring noise.</p>`}
+</section>`;
+}
+
+/**
+ * Form to create a mute rule from an article.
+ * @param {{ article: { id: number, title: string, url: string, feed_id: number, feed_title: string },
+ *   field: 'title'|'url', pattern: string, scope: 'feed'|'all', preview: { feed: number, all: number, limited?: boolean }, error?: string }} p
+ */
+export function muteForm(p) {
+  const a = p.article;
+  const other = p.field === 'title' ? 'url' : 'title';
+  return html`<h1>Mute articles</h1>
+${p.error ? html`<p class="flash error">${p.error}</p>` : ''}
+<p class="sub">From: ${a.title || '(untitled)'} · ${a.feed_title}</p>
+<form method="post" action="/mute" class="card mute">
+  <input type="hidden" name="article" value="${a.id}">
+  <input type="hidden" name="field" value="${p.field}">
+  <label>${p.field === 'url' ? 'URL' : 'Title'} contains
+    <input type="text" name="pattern" value="${p.pattern}" required minlength="2" maxlength="200">
+  </label>
+  <p class="sub">Not case-sensitive. Shorten it to the part that repeats.
+    <a href="/mute/new?article=${a.id}&amp;field=${other}">Match the ${other === 'url' ? 'URL' : 'title'} instead</a></p>
+  <fieldset>
+    <label class="check"><input type="radio" name="scope" value="feed" ${p.scope === 'feed' ? html`checked` : ''}> only in ${a.feed_title}
+      <span class="sub">(matches ${p.preview.feed} now)</span></label>
+    <label class="check"><input type="radio" name="scope" value="all" ${p.scope === 'all' ? html`checked` : ''}> in all my feeds
+      <span class="sub">(matches ${p.preview.all} now)</span></label>
+  </fieldset>
+  <p class="sub">Starred articles are never muted.${p.preview.limited ? html` Counts and hiding cover your newest ${MUTE_SCAN_LIMIT} articles; new articles are always checked.` : ''}</p>
+  <div><button type="submit">Mute</button> <a href="/">Cancel</a></div>
+</form>`;
 }
 
 /** @param {{ topics: any[], error?: string }} p */

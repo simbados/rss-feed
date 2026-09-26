@@ -7,6 +7,8 @@
 // test/security-rules.test.js checks that every other statement filters on `user_id = ?` (or inserts a
 // row owned by the user).
 
+import { MUTE_SCAN_LIMIT } from './mute.js';
+
 export const PAGE_SIZE = 50;
 export const RETENTION_MS = 60 * 24 * 60 * 60 * 1000;
 /** Unstarred articles kept per feed; bounds what one (hostile) feed can store in D1. */
@@ -15,7 +17,7 @@ export const MAX_ARTICLES_PER_FEED = 3000;
 export const DEFAULT_TOPICS = ['Security', 'News', 'Tech'];
 
 /** Functions that run for all users (cron) and are exempt from the user_id rule. */
-export const CRON_ONLY = ['dueFeeds', 'insertArticles', 'recordFetch', 'markFetchAttempt', 'purgeOldArticles', 'usersWithDevices'];
+export const CRON_ONLY = ['dueFeeds', 'insertArticles', 'recordFetch', 'markFetchAttempt', 'purgeOldArticles', 'usersWithDevices', 'muteRulesForFeed'];
 
 // Users
 
@@ -259,17 +261,22 @@ export async function dueFeeds(db, limit, dueBy = Date.now()) {
 /**
  * @param {any} db
  * @param {number} feedId a feed that belongs to a user (from dueFeeds or getFeed)
- * @param {{guidHash: string, url: string, title: string, snippet: string, author: string, publishedAt: number, imageUrl: string}[]} items
+ * @param {{guidHash: string, url: string, title: string, snippet: string, author: string, publishedAt: number, imageUrl: string,
+ *          mutedBy?: number|null}[]} items `mutedBy`: a mute rule matched → stored hidden and read
  */
 export async function insertArticles(db, feedId, items) {
   if (!items.length) return 0;
   const now = Date.now();
   const stmt = db.prepare(
-    `INSERT OR IGNORE INTO articles (feed_id, guid_hash, url, title, snippet, author, published_at, fetched_at, image_url)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR IGNORE INTO articles (feed_id, guid_hash, url, title, snippet, author, published_at, fetched_at, image_url,
+                                     is_hidden, is_read, muted_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const results = await db.batch(
-    items.map((i) => stmt.bind(feedId, i.guidHash, i.url, i.title, i.snippet, i.author, i.publishedAt, now, i.imageUrl))
+    items.map((i) => {
+      const muted = i.mutedBy ? 1 : 0;
+      return stmt.bind(feedId, i.guidHash, i.url, i.title, i.snippet, i.author, i.publishedAt, now, i.imageUrl, muted, muted, i.mutedBy || null);
+    })
   );
   return results.reduce((/** @type {number} */ n, /** @type {any} */ r) => n + (r.meta?.changes ?? 0), 0);
 }
@@ -328,6 +335,158 @@ export function purgeOldArticles(db) {
       )
       .bind(MAX_ARTICLES_PER_FEED),
   ]);
+}
+
+/**
+ * Mute rules that apply to a feed: its own and its user's all-feeds rules, oldest first.
+ * @param {any} db @param {number} feedId a feed that belongs to a user (from dueFeeds or getFeed)
+ * @returns {Promise<{ id: number, field: string, pattern: string }[]>}
+ */
+export async function muteRulesForFeed(db, feedId) {
+  const { results } = await db
+    .prepare(
+      `SELECT r.id, r.field, r.pattern
+         FROM mute_rules r JOIN feeds f ON f.user_id = r.user_id
+        WHERE f.id = ? AND (r.feed_id IS NULL OR r.feed_id = f.id)
+        ORDER BY r.id`
+    )
+    .bind(feedId)
+    .all();
+  return results;
+}
+
+// Mute rules
+
+/**
+ * The user's rules with the feed they're limited to and how many articles each one hides.
+ * @param {any} db @param {number} userId
+ */
+export async function listMuteRules(db, userId) {
+  const { results } = await db
+    .prepare(
+      `SELECT r.id, r.feed_id, r.field, r.pattern, r.created_at, f.title AS feed_title,
+              (SELECT COUNT(*) FROM articles
+                WHERE muted_by = r.id AND feed_id IN (SELECT id FROM feeds WHERE user_id = r.user_id)) AS hidden_count
+         FROM mute_rules r LEFT JOIN feeds f ON f.id = r.feed_id AND f.user_id = r.user_id
+        WHERE r.user_id = ?
+        ORDER BY r.id`
+    )
+    .bind(userId)
+    .all();
+  return results;
+}
+
+/** @param {any} db @param {number} userId @returns {Promise<number>} */
+export async function countMuteRules(db, userId) {
+  return (await db.prepare('SELECT COUNT(*) AS n FROM mute_rules WHERE user_id = ?').bind(userId).first('n')) ?? 0;
+}
+
+/**
+ * New rule. A feed-scoped rule is only created for the user's own feed; an existing identical rule is
+ * left alone. Returns the new rule, or null (duplicate or foreign feed).
+ * @param {any} db @param {number} userId
+ * @param {{ feedId: number|null, field: 'title'|'url', pattern: string }} r pattern already normalised
+ * @returns {Promise<{ id: number, feed_id: number|null, field: string, pattern: string } | null>}
+ */
+export function insertMuteRule(db, userId, r) {
+  if (r.feedId === null) {
+    return db
+      .prepare(
+        `INSERT OR IGNORE INTO mute_rules (user_id, feed_id, field, pattern, created_at) VALUES (?, NULL, ?, ?, ?)
+         RETURNING id, feed_id, field, pattern`
+      )
+      .bind(userId, r.field, r.pattern, Date.now())
+      .first();
+  }
+  return db
+    .prepare(
+      `INSERT OR IGNORE INTO mute_rules (user_id, feed_id, field, pattern, created_at)
+       SELECT user_id, id, ?, ?, ? FROM feeds WHERE id = ? AND user_id = ?
+       RETURNING id, feed_id, field, pattern`
+    )
+    .bind(r.field, r.pattern, Date.now(), r.feedId, userId)
+    .first();
+}
+
+/**
+ * The newest visible, unstarred articles a new rule could hide: in one feed, or in all of the user's feeds.
+ * @param {any} db @param {number} userId @param {number|null} feedId
+ * @returns {Promise<{ id: number, feed_id: number, title: string, url: string }[]>}
+ */
+export async function muteCandidates(db, userId, feedId, limit = MUTE_SCAN_LIMIT) {
+  const { results } = await db
+    .prepare(
+      `SELECT a.id, a.feed_id, a.title, a.url
+         FROM articles a JOIN feeds f ON f.id = a.feed_id
+        WHERE f.user_id = ?1 AND a.is_hidden = 0 AND a.is_starred = 0 AND (?2 IS NULL OR a.feed_id = ?2)
+        ORDER BY a.published_at DESC
+        LIMIT ?3`
+    )
+    .bind(userId, feedId, limit)
+    .all();
+  return results;
+}
+
+/**
+ * The user's existing rule with exactly this scope, field and pattern, or null.
+ * @param {any} db @param {number} userId @param {{ feedId: number|null, field: string, pattern: string }} r
+ * @returns {Promise<{ id: number, feed_id: number|null, field: string, pattern: string } | null>}
+ */
+export function findMuteRule(db, userId, r) {
+  return db
+    .prepare(
+      `SELECT id, feed_id, field, pattern FROM mute_rules
+        WHERE user_id = ? AND IFNULL(feed_id, 0) = ? AND field = ? AND pattern = ?`
+    )
+    .bind(userId, r.feedId ?? 0, r.field, r.pattern)
+    .first();
+}
+
+/**
+ * Hide these articles by a rule (only the user's own, never starred ones). @returns {Promise<number>} how many
+ * @param {any} db @param {number} userId @param {number} ruleId @param {number[]} ids
+ */
+export async function hideByMuteRule(db, userId, ruleId, ids) {
+  if (!ids.length) return 0;
+  const r = await db
+    .prepare(
+      `UPDATE articles SET is_hidden = 1, is_read = 1, muted_by = ?
+        WHERE id IN (SELECT value FROM json_each(?)) AND is_starred = 0 AND is_hidden = 0
+          AND feed_id IN (SELECT id FROM feeds WHERE user_id = ?)`
+    )
+    .bind(ruleId, JSON.stringify(ids), userId)
+    .run();
+  return r.meta?.changes ?? 0;
+}
+
+/**
+ * Delete a rule; the articles it hid come back (as read). Manually hidden articles stay hidden.
+ * @param {any} db @param {number} userId @param {number} id @returns {Promise<boolean>} false if not the user's
+ */
+export async function deleteMuteRule(db, userId, id) {
+  const [, deleted] = await db.batch([
+    db
+      .prepare(
+        `UPDATE articles SET is_hidden = 0, muted_by = NULL
+          WHERE muted_by = (SELECT id FROM mute_rules WHERE id = ? AND user_id = ?)
+            AND feed_id IN (SELECT id FROM feeds WHERE user_id = ?)`
+      )
+      .bind(id, userId, userId),
+    db.prepare('DELETE FROM mute_rules WHERE id = ? AND user_id = ?').bind(id, userId),
+  ]);
+  return (deleted.meta?.changes ?? 0) > 0;
+}
+
+/** An article with its feed title, for the mute form. @param {any} db @param {number} userId @param {number} id */
+export function getArticleForMute(db, userId, id) {
+  return db
+    .prepare(
+      `SELECT a.id, a.title, a.url, a.feed_id, f.title AS feed_title
+         FROM articles a JOIN feeds f ON f.id = a.feed_id
+        WHERE a.id = ? AND f.user_id = ?`
+    )
+    .bind(id, userId)
+    .first();
 }
 
 // Push notifications

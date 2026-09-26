@@ -7,6 +7,7 @@ import * as db from '../src/db.js';
 import { parseAllowedEmails, resolveUser } from '../src/users.js';
 import { maybeSendDigest } from '../src/digest.js';
 import { DUE_SLACK_MS } from '../src/fetcher.js';
+import { matchRule } from '../src/mute.js';
 
 const FEED_URL = 'https://news.x.test/feed.xml';
 const topicsOf = async (DB, user) => (await db.topicsWithCounts(DB, user)).topics;
@@ -174,6 +175,84 @@ test('cron: a feed due within the slack is picked up, one due later is not', asy
   DB.sqlite.prepare('UPDATE feeds SET next_fetch_at = ? WHERE id = ?').run(now + 10 * 60_000, feedB.id);
   assert.deepEqual((await db.dueFeeds(DB, 20, now + DUE_SLACK_MS)).map((f) => f.id), [feedA.id]);
   assert.equal((await db.dueFeeds(DB, 20, now)).length, 0, 'without slack neither is due');
+});
+
+test('mute: new matching articles arrive hidden and read, and are left out everywhere', async () => {
+  const { DB, a, feedA, articlesOf } = await setup();
+  const rule = await db.insertMuteRule(DB, a, { feedId: feedA.id, field: 'title', pattern: 'tagesschau in 100 sekunden' });
+  const rules = await db.muteRulesForFeed(DB, feedA.id);
+  assert.deepEqual(rules, [{ id: rule.id, field: 'title', pattern: 'tagesschau in 100 sekunden' }]);
+  const row = (n, title) => ({ guidHash: `m${n}`, url: `https://news.x.test/m${n}`, title, snippet: '', author: '', publishedAt: n, imageUrl: '', mutedBy: matchRule(rules, { title, url: '' }) });
+  await db.insertArticles(DB, feedA.id, [row(10, 'Tagesschau in 100 Sekunden'), row(11, 'Real news')]);
+  const muted = DB.sqlite.prepare("SELECT is_hidden, is_read, muted_by FROM articles WHERE guid_hash = 'm10'").get();
+  assert.deepEqual({ ...muted }, { is_hidden: 1, is_read: 1, muted_by: rule.id });
+  assert.deepEqual((await articlesOf(a)).map((x) => x.title).sort(), ['Item 1', 'Item 2', 'Real news']);
+  assert.equal((await db.topicsWithCounts(DB, a)).totalUnread, 3, 'not counted as unread');
+  const counts = await db.newArticleCounts(DB, a, 0, 'daily');
+  assert.equal(counts.reduce((n, c) => n + c.count, 0), 3, 'not in the daily summary');
+});
+
+test('mute: applying to existing articles, starred never muted, deleting brings them back as read', async () => {
+  const { DB, a, feedA, articlesOf } = await setup();
+  const [i1, i2] = (await articlesOf(a)).sort((x, y) => x.title.localeCompare(y.title));
+  await db.updateArticle(DB, a, i2.id, 'star');
+  // i1 visible, i2 starred. A manual hide on a third article must survive the rule's deletion.
+  await db.insertArticles(DB, feedA.id, [{ guidHash: 'h', url: '', title: 'Item hidden by hand', snippet: '', author: '', publishedAt: 9, imageUrl: '' }]);
+  const manual = (await articlesOf(a)).find((x) => x.title === 'Item hidden by hand');
+  await db.updateArticle(DB, a, manual.id, 'hide');
+
+  const rule = await db.insertMuteRule(DB, a, { feedId: null, field: 'title', pattern: 'item' });
+  const candidates = await db.muteCandidates(DB, a, null);
+  assert.deepEqual(candidates.map((c) => c.id), [i1.id], 'only visible, unstarred articles');
+  assert.equal(await db.hideByMuteRule(DB, a, rule.id, [i1.id, i2.id, manual.id]), 1, 'starred and already hidden untouched');
+  assert.equal((await db.listMuteRules(DB, a))[0].hidden_count, 1);
+  assert.deepEqual((await articlesOf(a)).map((x) => x.id), [i2.id]);
+
+  assert.equal(await db.insertMuteRule(DB, a, { feedId: null, field: 'title', pattern: 'item' }), null, 'duplicate rule');
+  assert.equal((await db.findMuteRule(DB, a, { feedId: null, field: 'title', pattern: 'item' })).id, rule.id, 'found for a retry');
+  assert.equal(await db.findMuteRule(DB, a, { feedId: feedA.id, field: 'title', pattern: 'item' }), null, 'scope is part of the rule');
+  assert.equal(await db.countMuteRules(DB, a), 1);
+
+  assert.equal(await db.deleteMuteRule(DB, a, rule.id), true);
+  const back = (await articlesOf(a)).find((x) => x.id === i1.id);
+  assert.equal(back.is_read, 1, 'comes back as read');
+  assert.ok(!(await articlesOf(a)).some((x) => x.id === manual.id), 'manual hide stays');
+  assert.equal(await db.countMuteRules(DB, a), 0);
+});
+
+test('mute: rules are per user; foreign ids find nothing', async () => {
+  const { DB, a, b, feedA, feedB, articlesOf } = await setup();
+  assert.equal(await db.insertMuteRule(DB, a, { feedId: feedB.id, field: 'title', pattern: 'item' }), null, "can't scope a rule to B's feed");
+  const rule = await db.insertMuteRule(DB, a, { feedId: null, field: 'title', pattern: 'item' });
+  assert.deepEqual(await db.muteRulesForFeed(DB, feedB.id), [], "A's all-feeds rule doesn't apply to B's feed (same URL)");
+  assert.equal((await db.muteRulesForFeed(DB, feedA.id)).length, 1);
+  assert.deepEqual(await db.listMuteRules(DB, b), []);
+  assert.equal(await db.countMuteRules(DB, b), 0);
+  assert.equal((await db.muteCandidates(DB, b, feedA.id)).length, 0, "B can't list A's articles");
+  const bIds = (await articlesOf(b)).map((x) => x.id);
+  assert.equal(await db.hideByMuteRule(DB, a, rule.id, bIds), 0, "A's rule can't hide B's articles");
+  assert.equal(await db.deleteMuteRule(DB, b, rule.id), false, "B can't delete A's rule");
+  assert.equal(await db.countMuteRules(DB, a), 1);
+  assert.equal(await db.getArticleForMute(DB, b, (await articlesOf(a))[0].id), null);
+});
+
+test('mute: candidates are the newest articles, capped', async () => {
+  const { DB, a } = await setup();
+  const newest = await db.muteCandidates(DB, a, null, 1);
+  assert.equal(newest.length, 1);
+  assert.equal(newest[0].title, 'Item 2', 'newest first');
+});
+
+test('mute: a rule id pointing at another user\'s articles never touches them', async () => {
+  const { DB, a, b, articlesOf } = await setup();
+  const ruleB = await db.insertMuteRule(DB, b, { feedId: null, field: 'title', pattern: 'nothing' });
+  // Only possible with foreign keys off or a reused id: A's article points at B's rule.
+  const artA = (await articlesOf(a))[0];
+  DB.sqlite.exec('PRAGMA foreign_keys = OFF');
+  DB.sqlite.prepare('UPDATE articles SET is_hidden = 1, muted_by = ? WHERE id = ?').run(ruleB.id, artA.id);
+  assert.equal((await db.listMuteRules(DB, b))[0].hidden_count, 0, "B's count ignores A's article");
+  assert.equal(await db.deleteMuteRule(DB, b, ruleB.id), true);
+  assert.equal(DB.sqlite.prepare('SELECT is_hidden FROM articles WHERE id = ?').get(artA.id).is_hidden, 1, "A's article stays hidden");
 });
 
 test('isolation: a feed can only get its own user\'s topic', async () => {

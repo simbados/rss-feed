@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { html, raw, escapeHtml, safeUrl } from '../src/html.js';
 import { parseFeed } from '../src/parser.js';
-import { articleItem, feedBadge, feedsPage, layout } from '../src/views.js';
+import { articleItem, feedBadge, feedsPage, layout, muteForm } from '../src/views.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
@@ -63,7 +63,7 @@ test('evil feed renders without executable markup', () => {
     assert.doesNotMatch(tag, /\son\w+\s*=/i, `event handler attribute in ${tag}`);
   }
   for (const m of out.matchAll(/href="([^"]*)"/g)) {
-    assert.match(m[1], /^(#|https?:\/\/|\/\?)/, `unsafe href: ${m[1]}`);
+    assert.match(m[1], /^(#|https?:\/\/|\/\?|\/mute\/new\?article=\d+$)/, `unsafe href: ${m[1]}`);
   }
   // The attribute-breakout link must stay inside its quoted attribute.
   assert.match(out, /href="https:\/\/ok\.example\/%22onmouseover=%22alert\(10\)"/);
@@ -86,6 +86,7 @@ test('feeds page and layout escape feed/topic names', () => {
       formUrl: evil,
       pushKey: evil,
       devices: [{ id: 7, host: evil, createdAt: Date.now(), lastError: evil }],
+      muteRules: [{ id: 3, feed_id: 1, feed_title: evil, field: 'title', pattern: evil, hidden_count: 2 }],
     }),
   }).toString();
   assert.doesNotMatch(page, /<script>alert/);
@@ -118,4 +119,27 @@ test('feed badge: first letter or digit, colour class fixed per feed id, escaped
   assert.match(feedBadge(/** @type {any} */ ('x" onclick="y'), 'T').toString(), /class="badge feed-c0"/, 'class contains only a number');
   const item = articleItem({ id: 1, title: 'T', url: '', feed_id: 2, feed_title: 'Feed', published_at: 0, is_read: 0, is_starred: 0 }).toString();
   assert.match(item, /<a class="feed" href="\/\?feed=2" title="Feed"><span class="badge feed-c2" aria-hidden="true">F<\/span><span class="name">Feed<\/span><\/a>/);
+});
+
+test('article actions: short Read/Unread labels and a Mute link to the form', () => {
+  const base = { id: 7, title: 'T', url: '', feed_id: 1, feed_title: 'F', published_at: 0, is_starred: 0 };
+  assert.match(articleItem({ ...base, is_read: 0 }).toString(), />Read<\/button>/);
+  assert.match(articleItem({ ...base, is_read: 1 }).toString(), />Unread<\/button>/);
+  assert.match(articleItem({ ...base, is_read: 0 }).toString(), /<a class="btn" href="\/mute\/new\?article=7"/);
+});
+
+test('mute form escapes article data and the pattern', () => {
+  const evil = '"><script>alert(1)</script>';
+  const out = muteForm({
+    article: { id: 3, title: evil, url: evil, feed_id: 1, feed_title: evil },
+    field: 'title',
+    pattern: evil,
+    scope: 'feed',
+    preview: { feed: 1, all: 2 },
+    error: evil,
+  }).toString();
+  assert.doesNotMatch(out, /<script>alert/);
+  assert.match(out, /name="pattern" value="&quot;&gt;&lt;script&gt;/);
+  assert.match(out, /href="\/mute\/new\?article=3&amp;field=url"/);
+  assert.match(out, /value="feed" checked/);
 });

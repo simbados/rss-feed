@@ -54,6 +54,7 @@ Browser / installed PWA ──► Cloudflare Access (login) ──► Worker (sr
 | `src/fetcher.js` | Cron refresh (20 feeds/run), backoff, add feed + discovery |
 | `src/parser.js` | RSS 2.0 / RSS 1.0 / Atom → plain text; image extraction; per-site fixes (`SITE_RULES`) |
 | `src/db.js` | All SQL, scoped by `userId` (cron functions listed in `CRON_ONLY`) |
+| `src/mute.js` | Mute rules: case-insensitive "contains" on title/URL (no regex); applied on fetch and on rule creation |
 | `src/views.js`, `src/html.js` | Pages; escape-by-default `html` template, `safeUrl()` |
 | `src/static.js` | CSS, `/app.js`, `/theme.js`, `/sw.js`, manifest, SVG icon |
 | `src/images.js` | Image proxy: fetches only the URL stored for an article, raster types only, 5 MB, edge cache |

@@ -78,7 +78,17 @@ h1 { font-size: 20px; margin: 0; }
 .snippet { margin: 6px 0; color: var(--fg); opacity: .85; overflow-wrap: anywhere; }
 .actions { display: flex; gap: 6px; font-size: 13px; }
 .actions form, .row-actions form, form.inline { display: inline; margin: 0; }
-.open-brave { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px; text-decoration: none; }
+.open-brave, .actions a.btn { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px; text-decoration: none; }
+.actions a.btn:hover { border-color: var(--muted); }
+form.mute { display: flex; flex-direction: column; gap: 8px; }
+form.mute label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
+form.mute input[type=text] { width: 100%; }
+form.mute fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+form.mute label.check { flex-direction: row; align-items: baseline; gap: 6px; color: var(--fg); font-size: 14px; }
+form.mute p { margin: 0; }
+.rules { list-style: none; margin: 8px 0 0; padding: 0; font-size: 14px; }
+.rules li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.rules li span { overflow-wrap: anywhere; }
 .version { position: fixed; left: calc(8px + env(safe-area-inset-left)); bottom: calc(6px + env(safe-area-inset-bottom)); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
 .push { margin-bottom: 16px; }
 .push h2 { font-size: 16px; margin: 0 0 4px; }
@@ -119,7 +129,7 @@ table.feeds tr.disabled { opacity: .55; }
 export const JS = `'use strict';
 (() => {
   const LABELS = {
-    read:  (s) => s.is_read ? ['unread', 'Mark unread'] : ['read', 'Mark read'],
+    read:  (s) => s.is_read ? ['unread', 'Unread'] : ['read', 'Read'],
     star:  (s) => s.is_starred ? ['unstar', '\\u2605 Unstar'] : ['star', '\\u2606 Star'],
   };
 

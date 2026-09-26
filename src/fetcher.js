@@ -4,6 +4,7 @@
 import { DIGEST_TIME_ZONE, localDateHour, maybeSendDigest } from './digest.js';
 import { parseFeed, discoverFeeds, NotAFeedError } from './parser.js';
 import * as db from './db.js';
+import { matchRule } from './mute.js';
 
 export const FEEDS_PER_RUN = 20; // keeps us well under the Workers subrequest limit
 const FETCH_TIMEOUT_MS = 10_000;
@@ -89,6 +90,15 @@ async function httpGet(url, cond = {}) {
 }
 
 /**
+ * Rows ready for insertion, with the feed's mute rules applied (one indexed query per changed feed).
+ * @param {any} env @param {number} feedId @param {import('./parser.js').FeedItem[]} items
+ */
+async function rowsForFeed(env, feedId, items) {
+  const [rows, rules] = await Promise.all([toRows(items), items.length ? db.muteRulesForFeed(env.DB, feedId) : []]);
+  return rows.map((row) => ({ ...row, mutedBy: matchRule(rules, row) }));
+}
+
+/**
  * Parsed items → rows ready for insertion (dedup hash, sane dates).
  * @param {import('./parser.js').FeedItem[]} items
  */
@@ -127,7 +137,7 @@ export async function refreshFeed(env, feed) {
       return { id: feed.id, added: 0 };
     }
     const parsed = parseFeed(r.body, r.res.url || feed.url);
-    const added = await db.insertArticles(env.DB, feed.id, await toRows(parsed.items));
+    const added = await db.insertArticles(env.DB, feed.id, await rowsForFeed(env, feed.id, parsed.items));
     await db.recordFetch(env.DB, feed.id, {
       ok: true,
       etag: r.res.headers.get('etag'),
@@ -215,7 +225,7 @@ export async function addFeed(env, userId, inputUrl, topicId) {
     siteUrl: parsed.siteUrl,
     topicId,
   });
-  const added = await db.insertArticles(env.DB, feed.id, await toRows(parsed.items));
+  const added = await db.insertArticles(env.DB, feed.id, await rowsForFeed(env, feed.id, parsed.items));
   await db.recordFetch(env.DB, feed.id, {
     ok: true,
     etag: r.res.headers.get('etag'),
