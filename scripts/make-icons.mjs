@@ -1,6 +1,7 @@
-// Generates src/icons/*.png: the "R" app icon (same geometry as ICON_SVG in src/static.js) as PNGs.
+// Generates src/icons/*.png: the "R" app icon (same geometry as src/client/icon.svg) as PNGs.
 // The Worker imports them as binary data (see [[rules]] in wrangler.toml).
-// Node built-ins only. Run: node scripts/make-icons.mjs
+// Node built-ins only. Run: node scripts/make-icons.mjs — then bump ICON_VERSION in src/views.js
+// (iOS keeps the old home-screen icon per URL; test/pwa.test.js reminds you).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync, crc32 } from 'node:zlib';
 

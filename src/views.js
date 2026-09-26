@@ -56,7 +56,7 @@ export function layout(p) {
 <link rel="stylesheet" href="/app.css?v=${p.assetVersion}">
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=${ICON_VERSION}">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="RSS">
@@ -90,6 +90,13 @@ export function layout(p) {
 
 // Colour classes .feed-c0 … .feed-c9 in src/static.js.
 const FEED_COLOURS = 10;
+
+/**
+ * Version of the app icons in their URL. iOS caches the touch icon per URL, outside Safari's website
+ * data, so a new icon needs a new URL. Bump it when `node scripts/make-icons.mjs` changes the icons
+ * (test/pwa.test.js fails until you do).
+ */
+export const ICON_VERSION = 2;
 
 /**
  * Small coloured square with the feed's first letter, so feeds are recognisable at a glance.

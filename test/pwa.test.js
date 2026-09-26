@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { ICON_SVG, MANIFEST } from '../src/static.js';
-import { layout } from '../src/views.js';
+import { ICON_VERSION, layout } from '../src/views.js';
 
 test('manifest makes the app installable in standalone mode', () => {
   const m = JSON.parse(MANIFEST);
@@ -141,4 +142,16 @@ test('no layout shift on load: theme label from CSS, fixed thumbnail box, cross-
   assert.match(CSS, /\.thumb \{[^}]*width: 112px; height: 84px; object-fit: cover;/);
   assert.match(CSS, /@view-transition \{ navigation: auto; \}/);
   assert.match(CSS, /prefers-reduced-motion: reduce\) \{\s*@view-transition \{ navigation: none; \}/);
+});
+
+test('touch icon URL has a fixed icon version that changes only with the icons', () => {
+  // iOS caches the touch icon per URL, outside Safari's website data (a phone that added the app before
+  // the icon existed kept a dark "R" monogram). The Worker serves icons by path, ignoring ?v=.
+  const page = layout({ title: 't', active: 'home', topics: [], totalUnread: 0, version: 'v', assetVersion: 'ab12', body: '' }).toString();
+  assert.match(page, new RegExp(`<link rel="apple-touch-icon" href="/apple-touch-icon\\.png\\?v=${ICON_VERSION}">`));
+  const index = readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+  assert.match(index, /ICONS\.get\(url\.pathname\)/, 'lookup by path only, so ?v= still finds the icon');
+  // Pinned per icon version: a regenerated icon fails here until ICON_VERSION is bumped and the hash updated.
+  const hash = createHash('sha256').update(readFileSync(new URL('../src/icons/apple-touch-icon.png', import.meta.url))).digest('hex').slice(0, 16);
+  assert.deepEqual({ version: ICON_VERSION, hash }, { version: 2, hash: '945ca226a3590dfe' }, 'icon changed: bump ICON_VERSION in src/views.js, then update this pin');
 });
