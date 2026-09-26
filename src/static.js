@@ -59,6 +59,15 @@ h1 { font-size: 20px; margin: 0; }
 .meta, .sub { color: var(--muted); font-size: 13px; }
 .meta a { text-decoration: none; }
 .meta a:hover { text-decoration: underline; }
+/* Feed name stands out from topic/author/time; the badge colour is fixed per feed (feedBadge in views.js). */
+.meta a.feed { color: var(--fg); font-weight: 500; }
+.badge { display: inline-block; width: 16px; height: 16px; margin-right: 5px; border-radius: 4px; vertical-align: -3px;
+  color: #fff; font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; }
+.item.is-read .badge { opacity: .6; }
+.feed-c0 { background: #b91c1c; } .feed-c1 { background: #c2410c; } .feed-c2 { background: #a16207; }
+.feed-c3 { background: #15803d; } .feed-c4 { background: #0f766e; } .feed-c5 { background: #0369a1; }
+.feed-c6 { background: #1d4ed8; } .feed-c7 { background: #6d28d9; } .feed-c8 { background: #a21caf; }
+.feed-c9 { background: #be185d; }
 .snippet { margin: 6px 0; color: var(--fg); opacity: .85; overflow-wrap: anywhere; }
 .actions { display: flex; gap: 6px; font-size: 13px; }
 .actions form, .row-actions form, form.inline { display: inline; margin: 0; }

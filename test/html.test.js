@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { html, raw, escapeHtml, safeUrl } from '../src/html.js';
 import { parseFeed } from '../src/parser.js';
-import { articleItem, feedsPage, layout } from '../src/views.js';
+import { articleItem, feedBadge, feedsPage, layout } from '../src/views.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
@@ -107,4 +107,15 @@ test('Brave button: hidden link to the checked article URL, none without a URL',
   assert.match(item, /<a class="open-brave" href="https:\/\/news\.x\.test\/a\?b=1&amp;c=2" target="_blank" rel="noopener noreferrer" hidden>/);
   assert.doesNotMatch(articleItem({ ...base, url: 'javascript:alert(1)' }).toString(), /open-brave/, 'no button for unsafe links');
   assert.doesNotMatch(articleItem({ ...base, url: '' }).toString(), /open-brave/);
+});
+
+test('feed badge: first letter or digit, colour class fixed per feed id, escaped', () => {
+  assert.equal(feedBadge(13, 'heise online').toString(), '<span class="badge feed-c3" aria-hidden="true">H</span>');
+  assert.match(feedBadge(13, 'other').toString(), /feed-c3/, 'same feed, same colour');
+  assert.match(feedBadge(7, '„Überblick“').toString(), />Ü</, 'skips leading punctuation');
+  assert.match(feedBadge(1, '<b>').toString(), />B</, 'markup characters never become the letter');
+  assert.match(feedBadge(1, '').toString(), />•</, 'fallback without a title');
+  assert.match(feedBadge(/** @type {any} */ ('x" onclick="y'), 'T').toString(), /class="badge feed-c0"/, 'class contains only a number');
+  const item = articleItem({ id: 1, title: 'T', url: '', feed_id: 2, feed_title: 'Feed', published_at: 0, is_read: 0, is_starred: 0 }).toString();
+  assert.match(item, /<a class="feed" href="\/\?feed=2"><span class="badge feed-c2" aria-hidden="true">F<\/span>Feed<\/a>/);
 });

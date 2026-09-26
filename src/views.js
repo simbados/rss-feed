@@ -86,6 +86,20 @@ export function layout(p) {
 </html>`;
 }
 
+// Colour classes .feed-c0 … .feed-c9 in src/static.js.
+const FEED_COLOURS = 10;
+
+/**
+ * Small coloured square with the feed's first letter, so feeds are recognisable at a glance.
+ * The colour is fixed per feed id; the class only ever contains a number.
+ * @param {number} feedId @param {string} title
+ */
+export function feedBadge(feedId, title) {
+  const n = Math.abs(Math.trunc(Number(feedId) || 0)) % FEED_COLOURS;
+  const letter = [...(title || '')].find((ch) => /[\p{L}\p{N}]/u.test(ch))?.toLocaleUpperCase() ?? '•';
+  return html`<span class="badge feed-c${n}" aria-hidden="true">${letter}</span>`;
+}
+
 /** @param {any} a */
 export function articleItem(a) {
   const readAction = a.is_read ? 'unread' : 'read';
@@ -95,7 +109,7 @@ export function articleItem(a) {
     <div>
       <h2><a class="title" href="${safeUrl(a.url)}" target="_blank" rel="noopener noreferrer">${a.title || '(untitled)'}</a></h2>
       <div class="meta">
-        <a href="${qs({ feed: a.feed_id })}">${a.feed_title}</a>
+        <a class="feed" href="${qs({ feed: a.feed_id })}">${feedBadge(a.feed_id, a.feed_title)}${a.feed_title}</a>
         ${a.topic_name ? html`· <a href="${qs({ topic: a.topic_id })}">${a.topic_name}</a>` : ''}
         ${a.author ? html`· ${a.author}` : ''}
         · ${time(a.published_at)}
