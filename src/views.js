@@ -39,7 +39,7 @@ function qs(params) {
 }
 
 /**
- * @param {{ title: string, active: string, topics: any[], totalUnread: number, currentTopic?: number|null, version: string, body: unknown }} p
+ * @param {{ title: string, active: string, topics: any[], totalUnread: number, currentTopic?: number|null, version: string, assetVersion: string, body: unknown }} p
  */
 export function layout(p) {
   return html`<!doctype html>
@@ -51,14 +51,14 @@ export function layout(p) {
 <meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)" data-scheme="light">
 <meta name="theme-color" content="#161412" media="(prefers-color-scheme: dark)" data-scheme="dark">
 <title>${p.title} · RSS</title>
-<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/app.css?v=${p.assetVersion}">
 <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="RSS">
-<script src="/theme.js"></script>
-<script src="/app.js" defer></script>
+<script src="/theme.js?v=${p.assetVersion}"></script>
+<script src="/app.js?v=${p.assetVersion}" defer></script>
 </head>
 <body>
 <header class="top">
@@ -113,7 +113,7 @@ export function articleItem(a) {
     <form method="post" action="/articles/${a.id}/hide" class="js-action">
       <button type="submit" data-kind="hide">Hide</button>
     </form>
-    ${a.url
+    ${safeUrl(a.url) !== '#'
       ? html`<a class="open-brave" href="${safeUrl(a.url)}" target="_blank" rel="noopener noreferrer" hidden>↗ Brave</a>`
       : ''}
   </div>

@@ -23,7 +23,8 @@ function offending(re, only = () => true) {
 
 test('rule 2: attributes with interpolated values are quoted', () => {
   // Only page templates build HTML attributes; elsewhere "x=${...}" is e.g. log text.
-  assert.deepEqual(offending(/[\w-]=\$\{/, (f) => f === 'views.js'), []);
+  // An attribute name follows whitespace; "?v=${…}" inside a quoted URL is not an attribute.
+  assert.deepEqual(offending(/\s[\w-]+=\$\{/, (f) => f === 'views.js'), []);
 });
 
 test('rule 3: interpolated href/src/action start with safeUrl() or qs()', () => {

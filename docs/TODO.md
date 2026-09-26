@@ -25,6 +25,13 @@ in `docs/security/last-review.md`. Remove items once they're done.
   publishes another feed's GUIDs first makes the real copies get dropped (`INSERT OR IGNORE`).
   Fix: make the uniqueness per feed (`UNIQUE(feed_id, guid_hash)`) — needs a table rebuild migration.
 
+## Security — from the diff review of 2026-09-26
+
+- [ ] **[Low] A10 – `siteName()` returns an empty name for site links without a host.**
+  `src/digest.js`: a channel `<link>` like `urn:x`, `mailto:…` or `data:,x` parses with `hostname ''`,
+  so the summary shows `" 12 · heise.de 3"`. Fix: only use http(s) URLs with a hostname, else fall back;
+  add a test with `siteUrl: 'urn:x'`.
+
 ## Limits to watch
 
 - [ ] **Outgoing requests per cron run.** A Worker invocation on the free plan may make 50 outgoing

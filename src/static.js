@@ -256,10 +256,12 @@ export const JS = `'use strict';
     if (article && !article.classList.contains('is-read')) {
       post('/articles/' + article.dataset.id + '/read').then((s) => apply(article, s)).catch(() => {});
     }
-    // href comes from safeUrl() (http/https or "#"); only real article links are handed to Brave.
-    if (link.classList.contains('open-brave') && /^https?:\\/\\//.test(link.href)) {
+    // The href attribute as the server wrote it (safeUrl: http/https only). Not link.href: that would
+    // turn "#" into this page's own URL.
+    const href = link.getAttribute('href') || '';
+    if (link.classList.contains('open-brave') && /^https?:\\/\\//.test(href)) {
       e.preventDefault();
-      location.href = 'brave://open-url?url=' + encodeURIComponent(link.href);
+      location.href = 'brave://open-url?url=' + encodeURIComponent(href);
     }
   });
 

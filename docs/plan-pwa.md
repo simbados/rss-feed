@@ -4,9 +4,9 @@ Status (2026-09-25): **installable and working on the iPhone.**
 - Done: steps 1, 2, 3 and 6; from step 4 the service worker itself (push only, no `fetch` handler yet).
 - **Open: offline cache (rest of step 4), offline behaviour (step 5), their tests (7), verification (8).**
 - Auto-refresh (2026-09-26, `/app.js`): back in the app after 5+ minutes → the page reloads via GET
-  (not while offline or typing). Open ideas: a refresh button in the header (iOS standalone has none);
-  version-stamped asset URLs (`/app.js?v=<deploy id>`) so new CSS/JS applies at once instead of within
-  the 1-hour cache.
+  (not while offline or typing). Open idea: a refresh button in the header (iOS standalone has none).
+- Versioned asset URLs (2026-09-26): `/app.css`, `/theme.js`, `/app.js` are linked with `?v=<deploy id>`
+  and cached long; a deploy changes the URLs, so HTML and scripts never mix versions.
 - To check on the iPhone after the step 2 polish: status bar colour follows light/dark and the theme
   button; header clear of the status bar/notch; version footer clear of the home indicator. If iOS keeps
   a plain white/black bar, `apple-mobile-web-app-status-bar-style` (`default`/`black-translucent`) is the
