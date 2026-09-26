@@ -3,27 +3,6 @@
 Open work that is not part of a feature plan. Feature plans live in `docs/plan-*.md`; review history
 in `docs/security/last-review.md`. Remove items once they're done.
 
-## Security — from the diff review of 2026-09-25 (up to `5024363`)
-
-- [ ] **[Low] A06 – The purge reads the whole articles table on every cron run.**
-  `purgeOldArticles` (`src/db.js`) runs every 30 minutes; the retention DELETE (no index on
-  `fetched_at`) and the per-feed cap (`ROW_NUMBER() OVER (PARTITION BY feed_id …)`) each read every
-  unstarred article. At ~50,000 articles that's ~4.8M rows/day, close to the free plan's 5M reads/day,
-  after which all D1 queries fail for the rest of the day.
-  Fix: run the purge once a day (e.g. in the run that sends the digest, or a fixed slot). The index on
-  `articles(fetched_at)` exists since the multi-user schema (2026-09-26); the per-feed cap still scans.
-- [ ] **[Low] A02 – The VAPID private key must be a Secret, not a plain variable.**
-  `[vars]` in `wrangler.toml` replaces plain-text dashboard variables on deploy, so a private key
-  entered as "Text" would be wiped (push silently "not configured") and is readable in the dashboard.
-  Fix: confirm `VAPID_PRIVATE_KEY` has type Secret and belongs to the committed public key; note it in
-  `AGENTS.md`.
-## Security — from the diff review of 2026-09-26
-
-- [ ] **[Low] A10 – `siteName()` returns an empty name for site links without a host.**
-  `src/digest.js`: a channel `<link>` like `urn:x`, `mailto:…` or `data:,x` parses with `hostname ''`,
-  so the summary shows `" 12 · heise.de 3"`. Fix: only use http(s) URLs with a hostname, else fall back;
-  add a test with `siteUrl: 'urn:x'`.
-
 ## Security — from the multi-user review of 2026-09-26
 
 - [ ] **[Low] A01 – Push on a shared device stays with the previous account.**
@@ -35,10 +14,13 @@ in `docs/security/last-review.md`. Remove items once they're done.
 
 ## Limits to watch
 
-- [ ] **Outgoing requests per cron run.** A Worker invocation on the free plan may make 50 outgoing
-  requests. The cron fetches up to `FEEDS_PER_RUN = 20` feeds (`src/fetcher.js`), and since the daily
-  summary runs in the same invocation, each push to a device is one more. Fine with a few devices; with
-  many, lower `FEEDS_PER_RUN` in the run that sends the summary.
+- [ ] **Outgoing requests per cron run — only relevant with many feeds.** A Worker invocation on the
+  free plan may make 50 outgoing requests (redirects count too). The cron fetches up to
+  `FEEDS_PER_RUN = 20` due feeds (`src/fetcher.js`) after sending the summary pushes (those go first, so
+  they're never starved). With more than ~20 feeds across all users, feeds take turns (e.g. 60 feeds →
+  each about every 1.5 h); many redirecting feeds could exceed 50, and the overflow fails with backoff.
+  Levers if it ever matters: cron every 10 min, a lower `FEEDS_PER_RUN`, storing permanent redirects, a
+  log warning when feeds fall behind, or the paid plan (1000 requests). Not expected with our feed count.
 
 ## Bugs
 

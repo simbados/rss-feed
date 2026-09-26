@@ -37,6 +37,9 @@ test('siteName: site URL, else feed URL, else title', () => {
   assert.equal(siteName({ title: 'T', siteUrl: 'https://www.a.invalid/x', feedUrl: 'https://b.invalid/feed' }), 'a.invalid');
   assert.equal(siteName({ title: 'T', siteUrl: '', feedUrl: 'https://feeds.b.invalid/rss' }), 'feeds.b.invalid');
   assert.equal(siteName({ title: 'Only a title' }), 'Only a title');
+  for (const odd of ['urn:x', 'mailto:a@b.invalid', 'data:,x', 'javascript:x', 'ftp://files.invalid/']) {
+    assert.equal(siteName({ title: 'T', siteUrl: odd, feedUrl: 'https://feed.x.test/rss' }), 'feed.x.test', odd);
+  }
 });
 
 test('parseSubscription accepts a real-looking subscription and rejects everything else', () => {

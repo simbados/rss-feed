@@ -193,3 +193,24 @@ test('isolation: even a corrupt cross-user topic link never shows the other user
   assert.ok(topics.every((t) => t.name !== 'B secret' && t.unread === 0 && t.feed_count === 0));
 });
 
+test('cleanup runs at most once per Berlin calendar day', async () => {
+  const { DB, feedA } = await setup();
+  const { purgeOncePerDay } = await import('../src/fetcher.js');
+  const env = { DB };
+  const addOld = (guid) =>
+    DB.sqlite
+      .prepare('INSERT INTO articles (feed_id, guid_hash, published_at, fetched_at) VALUES (?, ?, 1, 1)')
+      .run(feedA.id, guid);
+  const count = () => DB.sqlite.prepare('SELECT COUNT(*) AS n FROM articles WHERE fetched_at = 1').get().n;
+  const day1 = Date.UTC(2026, 8, 26, 7, 0);
+
+  addOld('old1');
+  assert.equal(await purgeOncePerDay(env, day1), true);
+  assert.equal(count(), 0, 'old article purged');
+  addOld('old2');
+  assert.equal(await purgeOncePerDay(env, day1 + 10 * 3600_000), false, 'same day: skipped');
+  assert.equal(count(), 1);
+  assert.equal(await purgeOncePerDay(env, day1 + 24 * 3600_000), true, 'next day: runs again');
+  assert.equal(count(), 0);
+});
+

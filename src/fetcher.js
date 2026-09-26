@@ -1,7 +1,7 @@
 // @ts-check
 // Fetching feeds: cron refresh, single-feed refresh, and adding new feeds (with discovery).
 
-import { maybeSendDigest } from './digest.js';
+import { DIGEST_TIME_ZONE, localDateHour, maybeSendDigest } from './digest.js';
 import { parseFeed, discoverFeeds, NotAFeedError } from './parser.js';
 import * as db from './db.js';
 
@@ -144,12 +144,27 @@ export async function refreshFeed(env, feed) {
   }
 }
 
+/**
+ * Delete old articles at most once per calendar day (Europe/Berlin): the purge reads the whole
+ * articles table, and every 30 minutes that would approach the free plan's daily D1 read limit.
+ * Marked as done before purging, like the daily summary, so a failure doesn't retry every 30 minutes.
+ * @param {any} env @param {number} [now]
+ * @returns {Promise<boolean>} whether it ran
+ */
+export async function purgeOncePerDay(env, now = Date.now()) {
+  const { date } = localDateHour(now, DIGEST_TIME_ZONE);
+  if ((await db.getState(env.DB, 'purge_date')) === date) return false;
+  await db.setState(env.DB, 'purge_date', date);
+  await db.purgeOldArticles(env.DB);
+  return true;
+}
+
 /** Cron entry point. @param {any} env */
 export async function runScheduled(env) {
   // Digest and purge first: they must not depend on every feed parsing within the run's limits.
   // (The summary at 19:00 counts what earlier runs fetched; this run's articles go into tomorrow's.)
   await maybeSendDigest(env).catch((err) => console.error('digest failed', err));
-  await db.purgeOldArticles(env.DB).catch((err) => console.error('purge failed', err));
+  await purgeOncePerDay(env).catch((err) => console.error('purge failed', err));
 
   const feeds = await db.dueFeeds(env.DB, FEEDS_PER_RUN);
   const results = await Promise.all(feeds.map((/** @type {any} */ f) => refreshFeed(env, f)));

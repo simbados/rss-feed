@@ -48,7 +48,9 @@ export function digestDueDate(now, lastSentDate) {
 export function siteName(row) {
   for (const url of [row.siteUrl, row.feedUrl]) {
     try {
-      if (url) return new URL(url).hostname.replace(/^www\./, '');
+      // Only real web addresses: "urn:x", "mailto:…" or "data:,x" parse fine but have no host.
+      const u = new URL(url ?? '');
+      if ((u.protocol === 'https:' || u.protocol === 'http:') && u.hostname) return u.hostname.replace(/^www\./, '');
     } catch {}
   }
   return row.title || '?';

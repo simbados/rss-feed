@@ -18,7 +18,7 @@ PWA with a daily push summary. Live at `rss.simbados.com`. One user; security ma
   Never `npx`, never a global wrangler, never install anything (npm/pip) without explicit consent.
 - **Cloudflare-side changes one step at a time**: remote migrations, deploys, secrets. Explain the
   command, ask, run exactly one, report. Local work (`npm test`, `npm run dev`, `--dry-run`) is fine.
-- **Never handle secrets.** Don't run `scripts/vapid-keys.mjs` (its output is the private key). `VAPID_PRIVATE_KEY` and `ALLOWED_EMAILS` are set by the user in the dashboard; the Cloudflare
+- **Never handle secrets.** Don't run `scripts/vapid-keys.mjs` (its output is the private key). `VAPID_PRIVATE_KEY` and `ALLOWED_EMAILS` are set by the user in the dashboard as type **Secret** (a plain "Text" variable is wiped by the next deploy and readable in the dashboard); the Cloudflare
   API token is an sbx secret (placeholder in `CLAUDE_ENV_FILE`). Never write real values into files.
 - **Migrations are additive only** (new tables/columns with defaults): the deploy migrates before the
   code goes live, so old code must keep working against the new schema. New file per change in
