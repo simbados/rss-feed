@@ -61,6 +61,7 @@ h1 { font-size: 20px; margin: 0; }
 .snippet { margin: 6px 0; color: var(--fg); opacity: .85; overflow-wrap: anywhere; }
 .actions { display: flex; gap: 6px; font-size: 13px; }
 .actions form, .row-actions form, form.inline { display: inline; margin: 0; }
+.open-brave { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px; text-decoration: none; }
 .version { position: fixed; left: calc(8px + env(safe-area-inset-left)); bottom: calc(6px + env(safe-area-inset-bottom)); font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; }
 .push { margin-bottom: 16px; }
 .push h2 { font-size: 16px; margin: 0 0 4px; }
@@ -242,14 +243,45 @@ export const JS = `'use strict';
     if (e.target instanceof HTMLImageElement && e.target.classList.contains('thumb')) e.target.remove();
   }, true);
 
-  // Opening an article marks it read.
+  // "Brave" button, only in the installed app: iOS opens links from a home-screen web app in its own
+  // Safari sheet and ignores the default browser; Brave's URL scheme hands the article to the Brave app.
+  const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  if (standalone) for (const a of document.querySelectorAll('a.open-brave')) a.hidden = false;
+
+  // Opening an article (title or Brave button) marks it read.
   document.addEventListener('click', (e) => {
-    const link = e.target instanceof Element && e.target.closest('a.title');
+    const link = e.target instanceof Element && e.target.closest('a.title, a.open-brave');
     if (!link) return;
     const article = link.closest('article[data-id]');
-    if (!article || article.classList.contains('is-read')) return;
-    post('/articles/' + article.dataset.id + '/read').then((s) => apply(article, s)).catch(() => {});
+    if (article && !article.classList.contains('is-read')) {
+      post('/articles/' + article.dataset.id + '/read').then((s) => apply(article, s)).catch(() => {});
+    }
+    // href comes from safeUrl() (http/https or "#"); only real article links are handed to Brave.
+    if (link.classList.contains('open-brave') && /^https?:\\/\\//.test(link.href)) {
+      e.preventDefault();
+      location.href = 'brave://open-url?url=' + encodeURIComponent(link.href);
+    }
   });
+
+  // Auto-refresh: iOS shows an installed app exactly as it was left, even hours later, and offers no
+  // reload button. Coming back after 5+ minutes in the background loads the page again.
+  const STALE_AFTER_MS = 5 * 60 * 1000;
+  let hiddenSince = document.hidden ? Date.now() : 0;
+  const markHidden = () => { hiddenSince = hiddenSince || Date.now(); };
+  const refreshIfStale = () => {
+    const away = hiddenSince ? Date.now() - hiddenSince : 0;
+    hiddenSince = 0;
+    if (away < STALE_AFTER_MS || !navigator.onLine) return;
+    // Don't throw away something being typed (e.g. a feed URL).
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && active.value) return;
+    // replace(), not reload(): a GET of the same URL, so a page that came from a form post is never re-posted.
+    location.replace(location.href);
+  };
+  document.addEventListener('visibilitychange', () => (document.hidden ? markHidden() : refreshIfStale()));
+  // Pages restored from the back/forward cache don't always fire visibilitychange.
+  window.addEventListener('pagehide', markHidden);
+  window.addEventListener('pageshow', (e) => { if (e.persisted) refreshIfStale(); });
 })();
 `;
 

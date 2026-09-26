@@ -91,3 +91,11 @@ test('feeds page and layout escape feed/topic names', () => {
   assert.match(page, /<script src="\/app\.js" defer><\/script>/);
   assert.equal(page.match(/<script/g).length, 2, 'only our own two script tags');
 });
+
+test('Brave button: hidden link to the checked article URL, none without a URL', () => {
+  const base = { id: 7, title: 'T', feed_id: 1, feed_title: 'F', published_at: 0, is_read: 0, is_starred: 0 };
+  const item = articleItem({ ...base, url: 'https://news.x.test/a?b=1&c=2' }).toString();
+  assert.match(item, /<a class="open-brave" href="https:\/\/news\.x\.test\/a\?b=1&amp;c=2" target="_blank" rel="noopener noreferrer" hidden>/);
+  assert.match(articleItem({ ...base, url: 'javascript:alert(1)' }).toString(), /class="open-brave" href="#"/);
+  assert.doesNotMatch(articleItem({ ...base, url: '' }).toString(), /open-brave/);
+});

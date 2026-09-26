@@ -113,6 +113,9 @@ export function articleItem(a) {
     <form method="post" action="/articles/${a.id}/hide" class="js-action">
       <button type="submit" data-kind="hide">Hide</button>
     </form>
+    ${a.url
+      ? html`<a class="open-brave" href="${safeUrl(a.url)}" target="_blank" rel="noopener noreferrer" hidden>↗ Brave</a>`
+      : ''}
   </div>
 </article>`;
 }
