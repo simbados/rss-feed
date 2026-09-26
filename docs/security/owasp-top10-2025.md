@@ -89,7 +89,10 @@ Check:
 ## A07:2025 – Authentication Failures
 Here: authentication is delegated to Cloudflare Access; the Worker re-verifies the JWT in
 `Cf-Access-Jwt-Assertion` on every request; `DEV_NO_AUTH=1` bypass for local development only.
+Second gate: the email must be on the Worker secret `ALLOWED_EMAILS` (`src/users.js`), fail closed.
 Check:
+- A code path that creates or accepts a user without the `ALLOWED_EMAILS` check, or treats a missing
+  list as "allow all"?
 - Any code path that authenticates via something other than the verified JWT (cookie presence, header
   presence, query parameter, IP)?
 - Changes to `src/auth.js`: caching of verification results, key rotation handling, error paths that

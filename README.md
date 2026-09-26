@@ -42,8 +42,15 @@ The Worker fails closed: without a valid Access JWT every request gets `401`.
 
 Several people can use one deployment; nobody sees another person's feeds, articles or notifications.
 A user is identified by the email in their Access login, and their (empty) reader is created on first
-login. **To add a person, add their email to the Access policy.** Removing them from the policy blocks
-them; their data stays until deleted: `wrangler d1 execute rss-feed --remote --command
+login. Two gates decide who may log in, and **adding a person needs both**:
+
+1. Zero Trust → Access → the `rss-feed` app → policy → include their email.
+2. Worker secret **`ALLOWED_EMAILS`** (dashboard → `rss-feed` → Settings → Variables and Secrets, type
+   **Secret**, comma-separated): add their email. Without this secret nobody gets in (403).
+
+A typo in one of the two locks the person out instead of letting someone else in. To remove a person,
+take them off both, revoke their session (Zero Trust → My Team → Users → Revoke session), and delete
+their data if wanted: `wrangler d1 execute rss-feed --remote --command
 "DELETE FROM users WHERE email = '…'"` (everything of theirs is deleted with it).
 
 ## Notifications (daily summary)

@@ -49,11 +49,14 @@ test('authentication and the user lookup run before any routing', () => {
   const routing = handle.indexOf("request.method === 'GET'");
   assert.ok(handle.indexOf('authenticate(request, env)') > 0 && handle.indexOf('authenticate(request, env)') < routing);
   assert.ok(handle.indexOf('resolveUser(env, auth.email)') > 0 && handle.indexOf('resolveUser(env, auth.email)') < routing);
-  assert.ok(handle.indexOf('if (!userId)') > 0 && handle.indexOf('if (!userId)') < routing, 'no user → 401 before routing');
+  const rejected = handle.indexOf("if ('error' in resolved)");
+  assert.ok(rejected > 0 && rejected < routing, 'no user / not allowed → 401/403 before routing');
 });
 
 test('the dev auth bypass is never configured for deployment', () => {
   assert.doesNotMatch(read('wrangler.toml'), /^\s*DEV_(NO_AUTH|EMAIL)\s*=/m);
+  // The allowlist is a Worker secret: the repo is public, and [vars] would overwrite it on deploy.
+  assert.doesNotMatch(read('wrangler.toml'), /ALLOWED_EMAILS\s*=/);
   const gitignore = read('.gitignore');
   for (const pattern of ['.dev.vars*', '.env', '.env.*']) assert.ok(gitignore.split('\n').includes(pattern), pattern);
 });

@@ -18,7 +18,7 @@ PWA with a daily push summary. Live at `rss.simbados.com`. One user; security ma
   Never `npx`, never a global wrangler, never install anything (npm/pip) without explicit consent.
 - **Cloudflare-side changes one step at a time**: remote migrations, deploys, secrets. Explain the
   command, ask, run exactly one, report. Local work (`npm test`, `npm run dev`, `--dry-run`) is fine.
-- **Never handle secrets.** Don't run `scripts/vapid-keys.mjs` (its output is the private key). `VAPID_PRIVATE_KEY` is set by the user in the dashboard; the Cloudflare
+- **Never handle secrets.** Don't run `scripts/vapid-keys.mjs` (its output is the private key). `VAPID_PRIVATE_KEY` and `ALLOWED_EMAILS` are set by the user in the dashboard; the Cloudflare
   API token is an sbx secret (placeholder in `CLAUDE_ENV_FILE`). Never write real values into files.
 - **Migrations are additive only** (new tables/columns with defaults): the deploy migrates before the
   code goes live, so old code must keep working against the new schema. New file per change in
@@ -71,6 +71,16 @@ Browser / installed PWA ──► Cloudflare Access (login) ──► Worker (sr
 - State-changing requests are POSTs and pass the same-origin check.
 - Every request is tied to the user from the verified Access email (`src/users.js`); a token without a
   usable email gets 401. Users never see each other's feeds, articles, topics, devices or summaries.
+- **Two gates decide who may log in — keep both.** (1) The Cloudflare Access policy: the login page shows
+  a code field for *any* address, but a code is only emailed to addresses on the policy. (2) The Worker
+  secret **`ALLOWED_EMAILS`** (comma/newline separated), checked in `resolveUser`: not on it → 403, and
+  if it's missing or empty everyone gets 403 (fail closed). Why: on 2026-09-26 a mistyped address in the
+  Access policy received a real code for ~30 s; with two gates one typo locks out instead of letting a
+  stranger in. Adding a person = both places, checked character by character. `ALLOWED_EMAILS` is a
+  **secret** (dashboard type Secret or `wrangler secret put`), never in `wrangler.toml`: the repo is
+  public, and deploys overwrite plain dashboard variables. Removing access: take the person off both,
+  and in Zero Trust **revoke the user's session** (My Team → Users) — revoking the app's tokens alone
+  doesn't end the Access login, which silently issues a new token.
 - The service worker opens only same-origin paths from notifications.
 
 ## Security reviews (by risk and at fixed points, not per change)

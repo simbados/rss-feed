@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createTestDb } from './helpers/d1.js';
 import * as db from '../src/db.js';
-import { resolveUser } from '../src/users.js';
+import { parseAllowedEmails, resolveUser } from '../src/users.js';
 import { maybeSendDigest } from '../src/digest.js';
 
 const FEED_URL = 'https://news.x.test/feed.xml';
@@ -12,8 +12,8 @@ const topicsOf = async (DB, user) => (await db.topicsWithCounts(DB, user)).topic
 
 async function setup() {
   const DB = createTestDb();
-  const a = await db.findOrCreateUser(DB, 'a@x.test');
-  const b = await db.findOrCreateUser(DB, 'b@x.test');
+  const a = (await db.findOrCreateUser(DB, 'a@x.test')).id;
+  const b = (await db.findOrCreateUser(DB, 'b@x.test')).id;
   const topicA = (await topicsOf(DB, a)).find((t) => t.name === 'News').id;
   const topicB = (await topicsOf(DB, b)).find((t) => t.name === 'News').id;
   const feedA = await db.insertFeed(DB, a, { url: FEED_URL, title: 'A news', siteUrl: '', topicId: topicA });
@@ -27,17 +27,19 @@ async function setup() {
 
 test('users: created on first login with default topics; email case-insensitive; no duplicates', async () => {
   const DB = createTestDb();
-  const env = { DB };
-  const id = await resolveUser(env, 'Person@Example.TEST');
-  assert.equal(await resolveUser(env, 'person@example.test'), id);
-  assert.equal(await db.findOrCreateUser(DB, 'person@example.test'), id);
+  const env = { DB, ALLOWED_EMAILS: 'person@example.test' };
+  const first = await resolveUser(env, 'Person@Example.TEST');
+  assert.equal(first.created, true);
+  const id = first.id;
+  assert.deepEqual(await resolveUser(env, 'person@example.test'), { id, created: false });
+  assert.deepEqual(await db.findOrCreateUser(DB, 'person@example.test'), { id, created: false });
   assert.deepEqual((await topicsOf(DB, id)).map((t) => t.name), db.DEFAULT_TOPICS.slice().sort());
   assert.equal(DB.sqlite.prepare('SELECT COUNT(*) AS n FROM users').get().n, 1);
   assert.equal(DB.sqlite.prepare('SELECT COUNT(*) AS n FROM topics').get().n, db.DEFAULT_TOPICS.length);
 });
 
 test('users: a token without a usable email gets no user (fail closed)', async () => {
-  const env = { DB: createTestDb() };
+  const env = { DB: createTestDb(), ALLOWED_EMAILS: 'kate@x.test' };
   await resolveUser(env, 'kate@x.test');
   const odd = [
     '', '   ', 'not-an-email', undefined, 'x'.repeat(400) + '@x.test', 'a@@x.test',
@@ -46,9 +48,33 @@ test('users: a token without a usable email gets no user (fail closed)', async (
     'm\u00FCller@x.test', // non-ASCII is rejected, not guessed at
   ];
   for (const email of odd) {
-    assert.equal(await resolveUser(env, /** @type {any} */ (email)), null, JSON.stringify(email));
+    assert.deepEqual(await resolveUser(env, /** @type {any} */ (email)), { error: 'no-email' }, JSON.stringify(email));
   }
   assert.equal(env.DB.sqlite.prepare('SELECT COUNT(*) AS n FROM users').get().n, 1, 'only kate exists');
+});
+
+test('allowlist: only emails on ALLOWED_EMAILS get a user; missing list locks everyone out', async () => {
+  const DB = createTestDb();
+  const count = () => DB.sqlite.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  const env = { DB, ALLOWED_EMAILS: ' Me@X.test,\n partner@x.test  , not-an-email ' };
+
+  assert.equal((await resolveUser(env, 'me@x.test')).created, true, 'case and whitespace in the list are normalised');
+  assert.equal((await resolveUser(env, 'partner@x.test')).created, true);
+  // A mistyped address that got past Access (the 2026-09-26 incident) is stopped here.
+  assert.deepEqual(await resolveUser(env, 'partmer@x.test'), { error: 'not-allowed' });
+  assert.equal(count(), 2, 'no user row for the rejected address');
+
+  for (const list of [undefined, '', ' , \n ', 'not-an-email']) {
+    assert.deepEqual(await resolveUser({ DB, ALLOWED_EMAILS: list }, 'me@x.test'), { error: 'not-configured' }, JSON.stringify(list));
+  }
+  // Local development (DEV_NO_AUTH, .dev.vars only) skips the list like it skips Access.
+  assert.equal((await resolveUser({ DB, DEV_NO_AUTH: '1' }, 'dev@localhost.test')).created, true);
+});
+
+test('allowlist: parsing', () => {
+  assert.deepEqual([...parseAllowedEmails('a@x.test,B@X.TEST\n c@x.test  d@x.test')], ['a@x.test', 'b@x.test', 'c@x.test', 'd@x.test']);
+  assert.deepEqual([...parseAllowedEmails('\u212Aate@x.test, ok@x.test')], ['ok@x.test'], 'unusable entries are ignored');
+  assert.equal(parseAllowedEmails(undefined).size, 0);
 });
 
 test('isolation: timeline, counts and topics only show the own data', async () => {

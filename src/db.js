@@ -23,22 +23,22 @@ export const CRON_ONLY = ['dueFeeds', 'insertArticles', 'recordFetch', 'markFetc
  * The user with this email, created on first login (with the default topics).
  * Safe against two parallel first requests: the second insert is ignored and the row is read again.
  * @param {any} db @param {string} email from normalizeEmail (src/users.js): checked, A–Z lower-cased, non-empty
- * @returns {Promise<number>} user id
+ * @returns {Promise<{ id: number, created: boolean }>}
  */
 export async function findOrCreateUser(db, email) {
   const existing = await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
-  if (existing) return existing.id;
+  if (existing) return { id: existing.id, created: false };
   const created = await db
     .prepare('INSERT INTO users (email, created_at) VALUES (?, ?) ON CONFLICT(email) DO NOTHING RETURNING id')
     .bind(email, Date.now())
     .first();
   if (!created) {
     const row = await db.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
-    return row.id;
+    return { id: row.id, created: false };
   }
   const topic = db.prepare('INSERT OR IGNORE INTO topics (user_id, name) VALUES (?, ?)');
   await db.batch(DEFAULT_TOPICS.map((name) => topic.bind(created.id, name)));
-  return created.id;
+  return { id: created.id, created: true };
 }
 
 // Articles

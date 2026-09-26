@@ -96,6 +96,12 @@ const ICONS = new Map([
   ['/icon-512-maskable.png', icon512Maskable],
 ]);
 
+/** Domain part of an email for logs (the full address is never logged). @param {unknown} email */
+function emailDomain(email) {
+  const at = String(email ?? '').lastIndexOf('@');
+  return at > 0 ? String(email).slice(at + 1, at + 101) : 'none';
+}
+
 /** Positive integer or null. @param {unknown} v */
 function toId(v) {
   const n = Number(v);
@@ -371,14 +377,19 @@ async function handle(request, env, ctx) {
     console.warn(`auth rejected: ${auth.reason}`);
     return respond('Unauthorized', 401, { 'content-type': 'text/plain; charset=utf-8' });
   }
-  // Every handler below only sees this user's data (see src/db.js).
-  const userId = await resolveUser(env, auth.email);
-  if (!userId) {
-    console.warn('auth rejected: token without a usable email');
-    return respond('Unauthorized', 401, { 'content-type': 'text/plain; charset=utf-8' });
+  // Second gate after Access: the email must be on ALLOWED_EMAILS (src/users.js). Every handler below
+  // only sees this user's data (src/db.js).
+  const resolved = await resolveUser(env, auth.email);
+  if ('error' in resolved) {
+    // Only the domain is logged, never the full address.
+    console.warn(`auth rejected: ${resolved.error} (email domain: ${emailDomain(auth.email)})`);
+    return resolved.error === 'no-email'
+      ? respond('Unauthorized', 401, { 'content-type': 'text/plain; charset=utf-8' })
+      : respond('Forbidden: this account is not enabled for this reader.', 403, { 'content-type': 'text/plain; charset=utf-8' });
   }
+  if (resolved.created) console.warn(`users: new user ${resolved.id} created on first login (email domain: ${emailDomain(auth.email)})`);
   /** @type {User} */
-  const user = { id: userId, email: normalizeEmail(auth.email) };
+  const user = { id: resolved.id, email: normalizeEmail(auth.email) };
 
   if (request.method === 'GET' || request.method === 'HEAD') {
     const img = url.pathname.match(/^\/img\/(\d+)$/);
