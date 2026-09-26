@@ -1,6 +1,6 @@
 # rss-feed — notes for coding agents
 
-Personal RSS/Atom reader on **Cloudflare Workers + D1**, behind **Cloudflare Access**, installable as a
+Personal RSS reader on **Cloudflare Workers + D1**, behind **Cloudflare Access**, installable as a
 PWA with a daily push summary. Live at `rss.simbados.com`. One user; security matters more than features.
 
 ## How it is built
