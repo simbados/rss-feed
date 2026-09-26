@@ -40,6 +40,17 @@ test('rule 4: no inline handlers, inline styles or inline scripts in views', () 
   assert.deepEqual(offending(/\son[a-z]+\s*=\s*["'$]|\sstyle\s*=|<script(?![^>]*\bsrc=)/i, (f) => f === 'views.js'), []);
 });
 
-test('client script uses no HTML-parsing DOM sinks', () => {
-  assert.deepEqual(offending(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function/, (f) => f === 'static.js'), []);
+test('client scripts use no HTML-parsing DOM sinks', () => {
+  const clientDir = new URL('../src/client/', import.meta.url);
+  const sinks = /innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function|setTimeout\(\s*['"`]/;
+  const hits = readdirSync(clientDir)
+    .filter((f) => f.endsWith('.js'))
+    .flatMap((name) =>
+      readFileSync(new URL(name, clientDir), 'utf8')
+        .split('\n')
+        .map((line, i) => (sinks.test(line) && !/^\s*(\/\/|\*)/.test(line) ? `${name}:${i + 1}: ${line.trim()}` : null))
+        .filter(Boolean)
+    );
+  assert.ok(readdirSync(clientDir).includes('app.js'), 'client dir found');
+  assert.deepEqual(hits, []);
 });

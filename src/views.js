@@ -60,7 +60,7 @@ export function layout(p) {
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="RSS">
 <script src="/theme.js?v=${p.assetVersion}"></script>
-<script src="/app.js?v=${p.assetVersion}" defer></script>
+<script type="module" src="/app.js?v=${p.assetVersion}"></script>
 </head>
 <body>
 <header class="top">
@@ -75,10 +75,10 @@ export function layout(p) {
 </header>
 <div class="wrap">
   <aside class="side">
-    <a href="/" class="${p.active === 'home' && !p.currentTopic ? 'on' : ''}">All <span class="count">${p.totalUnread}</span></a>
+    <a href="/" class="${p.active === 'home' && !p.currentTopic ? 'on' : ''}">All <span class="count" data-count="total">${p.totalUnread}</span></a>
     ${p.topics.map(
       (t) => html`<a href="${qs({ topic: t.id })}" class="${p.currentTopic === t.id ? 'on' : ''}">${t.name}
-        <span class="count">${t.unread}</span></a>`
+        <span class="count" data-count="topic:${t.id}">${t.unread}</span></a>`
     )}
   </aside>
   <main>${p.body}</main>

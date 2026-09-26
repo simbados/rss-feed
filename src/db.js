@@ -160,6 +160,15 @@ export async function topicsWithCounts(db, userId) {
   return { topics: topics.results, totalUnread: total.results[0]?.unread ?? 0 };
 }
 
+/**
+ * Unread counts for the client state: overall and per topic.
+ * @param {any} db @param {number} userId @returns {Promise<{ total: number, topics: Record<number, number> }>}
+ */
+export async function unreadCounts(db, userId) {
+  const { topics, totalUnread } = await topicsWithCounts(db, userId);
+  return { total: totalUnread, topics: Object.fromEntries(topics.map((/** @type {any} */ t) => [t.id, t.unread])) };
+}
+
 /** @param {any} db @param {number} userId @param {number} id */
 export async function ownsTopic(db, userId, id) {
   return Boolean(await db.prepare('SELECT 1 FROM topics WHERE id = ? AND user_id = ?').bind(id, userId).first());

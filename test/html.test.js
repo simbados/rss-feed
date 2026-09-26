@@ -97,7 +97,7 @@ test('feeds page and layout escape feed/topic names', () => {
     'header email present and escaped in attribute and text'
   );
   assert.match(page, /<script src="\/theme\.js\?v=abc12345"><\/script>/);
-  assert.match(page, /<script src="\/app\.js\?v=abc12345" defer><\/script>/);
+  assert.match(page, /<script type="module" src="\/app\.js\?v=abc12345"><\/script>/);
   assert.match(page, /<link rel="stylesheet" href="\/app\.css\?v=abc12345">/);
   assert.equal(page.match(/<script/g).length, 2, 'only our own two script tags');
 });

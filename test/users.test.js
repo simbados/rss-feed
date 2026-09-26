@@ -255,6 +255,15 @@ test('mute: a rule id pointing at another user\'s articles never touches them', 
   assert.equal(DB.sqlite.prepare('SELECT is_hidden FROM articles WHERE id = ?').get(artA.id).is_hidden, 1, "A's article stays hidden");
 });
 
+test('unread counts for the client: total and per topic, per user', async () => {
+  const { DB, a, b, topicA, topicB, articlesOf } = await setup();
+  assert.deepEqual(await db.unreadCounts(DB, a), { total: 2, topics: Object.fromEntries((await topicsOf(DB, a)).map((t) => [t.id, t.id === topicA ? 2 : 0])) });
+  await db.updateArticle(DB, a, (await articlesOf(a))[0].id, 'read');
+  assert.equal((await db.unreadCounts(DB, a)).total, 1);
+  assert.equal((await db.unreadCounts(DB, b)).total, 3, "A's read doesn't change B's counts");
+  assert.equal((await db.unreadCounts(DB, b)).topics[topicB], 3);
+});
+
 test('isolation: a feed can only get its own user\'s topic', async () => {
   const { DB, a, topicA, topicB, feedA } = await setup();
   const topicOf = (id) => DB.sqlite.prepare('SELECT topic_id FROM feeds WHERE id = ?').get(id).topic_id;

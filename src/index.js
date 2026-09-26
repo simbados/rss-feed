@@ -13,7 +13,7 @@ import icon192 from './icons/icon-192.png';
 import icon512Maskable from './icons/icon-512-maskable.png';
 import icon512 from './icons/icon-512.png';
 import { parseSubscription, sendToUser } from './push.js';
-import { CSS, ICON_SVG, JS, MANIFEST, SW_JS, THEME_JS } from './static.js';
+import { CLIENT_MODULES, CSS, ICON_SVG, MANIFEST, SW_JS, THEME_JS, versionImports } from './static.js';
 import * as views from './views.js';
 
 const CSP = [
@@ -304,7 +304,9 @@ async function handlePost(request, env, user, url) {
     const state = await db.updateArticle(env.DB, user.id, Number(m[1]), m[2]);
     if (!state) return errorResponse(404, 'Article not found.');
     if (request.headers.get('x-requested-with') === 'fetch') {
-      return respond(JSON.stringify(state), 200, { 'content-type': 'application/json' });
+      // The client-state reply shape (src/client/store.js): what changed, plus the new unread counts.
+      const { id, ...article } = state;
+      return json({ articles: { [id]: article }, counts: await db.unreadCounts(env.DB, user.id) });
     }
     return redirect(backTo(request, url));
   }
@@ -469,6 +471,15 @@ async function handle(request, env, ctx) {
   if (request.method === 'GET' || request.method === 'HEAD') {
     const img = url.pathname.match(/^\/img\/(\d+)$/);
     if (img) return serveImage(request, env, user, ctx, Number(img[1]));
+    const module = CLIENT_MODULES.get(url.pathname);
+    if (module) {
+      // Imports get the server's own deploy id, never the request's ?v= (that would put request text into
+      // served JavaScript). The request's ?v= only decides the caching, like for /app.css.
+      return respond(versionImports(module, url.searchParams.has('v') ? assetVersion(env) : null), 200, {
+        'content-type': 'text/javascript; charset=utf-8',
+        'cache-control': assetCache(url),
+      });
+    }
     const icon = ICONS.get(url.pathname);
     if (icon) return respond(icon, 200, { 'content-type': 'image/png', 'cache-control': 'private, max-age=86400' });
     switch (url.pathname) {
@@ -482,8 +493,6 @@ async function handle(request, env, ctx) {
         return renderMuteForm(env, user, url);
       case '/app.css':
         return respond(CSS, 200, { 'content-type': 'text/css; charset=utf-8', 'cache-control': assetCache(url) });
-      case '/app.js':
-        return respond(JS, 200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': assetCache(url) });
       case '/theme.js':
         return respond(THEME_JS, 200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': assetCache(url) });
       case '/sw.js':

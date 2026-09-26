@@ -12,6 +12,13 @@ type = "Data"
 globs = ["**/*.png"]
 fallthrough = true
 
+# Client files (src/client/) as plain text: `import APP_JS from './client/app.js'` → the file's source,
+# served by the Worker (src/static.js). Not bundled or executed on the server.
+[[rules]]
+type = "Text"
+globs = ["**/client/*.js", "**/client/*.css", "**/client/*.svg"]
+fallthrough = true
+
 [triggers]
 crons = ["*/15 * * * *"]
 

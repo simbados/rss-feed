@@ -6,8 +6,8 @@ PWA with a daily push summary. Live at `rss.simbados.com`. One user; security ma
 ## How it is built
 - Plain ES modules, **no framework and no runtime dependencies**. Don't add packages without asking;
   `wrangler` is the only dev dependency.
-- Server-rendered HTML; the only client code is `/app.js`, `/theme.js` and the service worker `/sw.js`
-  (all strings in `src/static.js`).
+- Server-rendered HTML, enhanced by small client modules in `src/client/` (real files, bundled by wrangler
+  as text, served by the Worker). Conventions for state, replies and client code: `docs/architecture.md`.
 - JSDoc types with `// @ts-check` on every source file.
 - Tests: `node --test` (Node ≥ 22), no test framework. Fixtures in `test/fixtures/`.
 - Deploys: Workers Builds on push to `main` — build `npm ci && npm test`, deploy `npm run deploy`
@@ -56,7 +56,8 @@ Browser / installed PWA ──► Cloudflare Access (login) ──► Worker (sr
 | `src/db.js` | All SQL, scoped by `userId` (cron functions listed in `CRON_ONLY`) |
 | `src/mute.js` | Mute rules: case-insensitive "contains" on title/URL (no regex); applied on fetch and on rule creation |
 | `src/views.js`, `src/html.js` | Pages; escape-by-default `html` template, `safeUrl()` |
-| `src/static.js` | CSS, `/app.js`, `/theme.js`, `/sw.js`, manifest, SVG icon |
+| `src/static.js` | Imports the client files as text, `CLIENT_MODULES`, `versionImports()`, manifest |
+| `src/client/*` | `/app.js` (ES module entry) + `store.js`, `articles.js`, `refresh.js`, `push.js`; classic `/theme.js`, `/sw.js`; `/app.css`, `/icon.svg` |
 | `src/images.js` | Image proxy: fetches only the URL stored for an article, raster types only, 5 MB, edge cache |
 | `src/webpush.js`, `src/push.js` | Web Push: VAPID (RFC 8292) + aes128gcm (RFC 8291); send to all devices |
 | `src/digest.js` | Daily summary at 19:00 Europe/Berlin (cron is UTC; state in `app_state`) |
@@ -94,7 +95,7 @@ LLM reviews cost tokens, so they run only when they can find something:
    **security-relevant file**, suggest a diff review and start it only after the user agrees:
    - `src/auth.js`, `src/index.js` (routing, headers, CSP)
    - `src/parser.js`, `src/fetcher.js`, `src/images.js` (untrusted input, outgoing requests)
-   - `src/push.js`, `src/webpush.js`, the service worker (`SW_JS`) and client scripts in `src/static.js`
+   - `src/push.js`, `src/webpush.js`, `src/static.js` and everything in `src/client/` (service worker, page scripts)
    - `migrations/`, `wrangler.toml`, `package.json`, `package-lock.json`, `.npmrc`
 
    Scope: `git diff <last reviewed commit>` plus uncommitted changes. The last reviewed commit is in
